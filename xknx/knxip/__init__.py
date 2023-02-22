@@ -1,8 +1,8 @@
 """This package contains all methods for serialization and deserialization of KNX/IP packets."""
 # flake8: noqa
 from .body import KNXIPBody, KNXIPBodyResponse
-from .connect_request import ConnectRequest
-from .connect_response import ConnectResponse
+from .connect_request import ConnectRequest, ConnectRequestInformation
+from .connect_response import ConnectResponse, ConnectResponseData
 from .connectionstate_request import ConnectionStateRequest
 from .connectionstate_response import ConnectionStateResponse
 from .description_request import DescriptionRequest
@@ -29,6 +29,7 @@ from .knxip_enum import (
     KNXIPServiceType,
     KNXMedium,
     SearchRequestParameterType,
+    TunnellingLayer,
 )
 from .routing_busy import RoutingBusy
 from .routing_indication import RoutingIndication
@@ -51,7 +52,9 @@ __all__ = [
     "KNXIPBody",
     "KNXIPBodyResponse",
     "ConnectRequest",
+    "ConnectRequestInformation",
     "ConnectResponse",
+    "ConnectResponseData",
     "ConnectionStateRequest",
     "ConnectionStateResponse",
     "DescriptionRequest",
@@ -90,5 +93,6 @@ __all__ = [
     "SRP",
     "TimerNotify",
     "TunnellingAck",
+    "TunnellingLayer",
     "TunnellingRequest",
 ]

@@ -1,4 +1,4 @@
-"""Encryption and Decryption functions for KNX/IP Datagrams."""
+"""Encryption and Decryption functions for KNX Secure."""
 from __future__ import annotations
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -58,7 +58,7 @@ def encrypt_data_ctr(
     Encrypt data with AES-CTR.
 
     Payload is expected a full Plain KNX/IP frame with header.
-    MAC shall be encrypted with coutner 0, KNXnet/IP frame with incremented counters.
+    MAC shall be encrypted with counter 0, KNXnet/IP frame with incremented counters.
     Returns a tuple of encrypted data (if there is any) and encrypted MAC.
     """
     s_cipher = Cipher(algorithms.AES(key), modes.CTR(counter_0))

@@ -151,7 +151,7 @@ class DIBDeviceInformation(DIB):
         self.knx_medium = KNXMedium(raw[2])
         # last bit of device_status. All other bits are unused
         self.programming_mode = bool(raw[3])
-        self.individual_address = IndividualAddress((raw[4], raw[5]))
+        self.individual_address = IndividualAddress.from_knx(raw[4:6])
         installation_project_identifier = raw[6] * 256 + raw[7]
         self.project_number = installation_project_identifier >> 4
         self.installation_number = installation_project_identifier & 15
@@ -190,7 +190,7 @@ class DIBDeviceInformation(DIB):
                     self.programming_mode,
                 )
             )
-            + bytes(self.individual_address.to_knx())
+            + self.individual_address.to_knx()
             + installation_project_identifier
             + hex_notation_to_knx(self.serial_number)
             + ip_to_knx(self.multicast_address)
@@ -245,11 +245,10 @@ class _DIBServiceFamilies(DIB):
 
     def supports(self, name: DIBServiceFamily, version: int | None = None) -> bool:
         """Return if device supports a given service family by name and optional minimum version."""
-        for family in self.families:
-            if name == family.name:
-                if version is None or family.version >= version:
-                    return True
-        return False
+        return any(
+            name == family.name and (version is None or family.version >= version)
+            for family in self.families
+        )
 
     def version(self, name: DIBServiceFamily) -> int | None:
         """Return version of a given service family."""
@@ -357,7 +356,7 @@ class DIBTunnelingInfo(DIB):
 
         self.max_apdu_length = int.from_bytes(raw[2:4], "big")
         for pos in range(4, length, 4):
-            address = IndividualAddress((raw[pos], raw[pos + 1]))
+            address = IndividualAddress.from_knx(raw[pos : pos + 2])
             status = TunnelingSlotStatus(
                 usable=bool(raw[pos + 3] >> 2 & 0b1),
                 authorized=bool(raw[pos + 3] >> 1 & 0b1),
@@ -372,7 +371,7 @@ class DIBTunnelingInfo(DIB):
             bytes((self.calculated_length(), DIBTypeCode.TUNNELING_INFO.value))
             + self.max_apdu_length.to_bytes(2, "big")
             + b"".join(
-                bytes(address.to_knx()) + bytes(status)
+                address.to_knx() + bytes(status)
                 for address, status in self.slots.items()
             )
         )

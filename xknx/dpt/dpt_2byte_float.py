@@ -55,7 +55,7 @@ class DPT2ByteFloat(DPTNumeric):
 
             value = knx_value * 100
             exponent = 0
-            while value < -2048 or value > 2047:
+            while not -2048 <= value <= 2047:
                 exponent += 1
                 value /= 2
 
@@ -132,6 +132,7 @@ class DPTWsp(DPT2ByteFloat):
     dpt_sub_number = 5
     value_type = "wind_speed_ms"
     unit = "m/s"
+    ha_device_class = "wind_speed"
 
     value_min = 0
     value_max = 670760
@@ -212,6 +213,7 @@ class DPTVoltage(DPT2ByteFloat):
     dpt_sub_number = 20
     value_type = "voltage"
     unit = "mV"
+    ha_device_class = "voltage"
 
 
 class DPTCurrent(DPT2ByteFloat):
@@ -221,6 +223,7 @@ class DPTCurrent(DPT2ByteFloat):
     dpt_sub_number = 21
     value_type = "curr"
     unit = "mA"
+    ha_device_class = "current"
 
 
 class DPTPowerDensity(DPT2ByteFloat):
@@ -292,6 +295,7 @@ class DPTWspKmh(DPT2ByteFloat):
     dpt_sub_number = 28
     value_type = "wind_speed_kmh"
     unit = "km/h"
+    ha_device_class = "wind_speed"
 
     value_min = 0
     value_max = 670760

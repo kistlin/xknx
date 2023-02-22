@@ -19,6 +19,7 @@ from xknx.exceptions import (
 )
 from xknx.knxip import (
     HPAI,
+    ConnectRequestInformation,
     DisconnectRequest,
     DisconnectResponse,
     HostProtocol,
@@ -70,6 +71,7 @@ class _Tunnel(Interface):
         self._initial_connection = True
         self._is_reconnecting = False
         self._reconnect_task: asyncio.Task[None] | None = None
+        self._requested_address: IndividualAddress | None = None
         self._src_address = IndividualAddress(0)
         self._send_lock = asyncio.Lock()
         # self._tunnelling_request_confirmation_event = asyncio.Event()
@@ -125,12 +127,12 @@ class _Tunnel(Interface):
             raise CommunicationError(
                 "Tunnel connection could not be established"
             ) from ex
-        else:
-            self._tunnel_established()
-            await self.xknx.connection_manager.connection_state_changed(
-                XknxConnectionState.CONNECTED
-            )
-            return True
+
+        self._tunnel_established()
+        await self.xknx.connection_manager.connection_state_changed(
+            XknxConnectionState.CONNECTED
+        )
+        return True
 
     def _tunnel_established(self) -> None:
         """Set up interface when the tunnel is ready."""
@@ -141,7 +143,7 @@ class _Tunnel(Interface):
     def _tunnel_lost(self) -> None:
         """Prepare for reconnection or shutdown when the connection is lost. Callback."""
         self.stop_heartbeat()
-        asyncio.create_task(
+        self.xknx.task_registry.background(
             self.xknx.connection_manager.connection_state_changed(
                 XknxConnectionState.DISCONNECTED
             )
@@ -186,18 +188,22 @@ class _Tunnel(Interface):
 
     async def _connect_request(self) -> bool:
         """Connect to tunnelling server. Set communication_channel and src_address."""
-        connect = Connect(transport=self.transport, local_hpai=self.local_hpai)
+        connect = Connect(
+            transport=self.transport,
+            local_hpai=self.local_hpai,
+            cri=ConnectRequestInformation(individual_address=self._requested_address),
+        )
         await connect.start()
         if connect.success:
             self.communication_channel = connect.communication_channel
             # assign data_endpoint received from server
             self._data_endpoint_addr = (
-                connect.data_endpoint.addr_tuple
-                if not connect.data_endpoint.route_back
-                else None
+                None
+                if connect.data_endpoint.route_back
+                else connect.data_endpoint.addr_tuple
             )
             # Use the individual address provided by the tunnelling server
-            self._src_address = IndividualAddress(connect.identifier)
+            self._src_address = connect.crd.individual_address or IndividualAddress(0)
             self.xknx.current_address = self._src_address
             logger.debug(
                 "Tunnel established. communication_channel=%s, address=%s",
@@ -557,6 +563,7 @@ class TCPTunnel(_Tunnel):
         cemi_received_callback: CEMICallbackType,
         gateway_ip: str,
         gateway_port: int,
+        individual_address: IndividualAddress | None = None,
         auto_reconnect: bool = True,
         auto_reconnect_wait: int = 3,
     ):
@@ -571,6 +578,7 @@ class TCPTunnel(_Tunnel):
         )
         # TCP always uses 0.0.0.0:0
         self.local_hpai = HPAI(protocol=HostProtocol.IPV4_TCP)
+        self._requested_address = individual_address
 
     def _init_transport(self) -> None:
         """Initialize transport transport."""

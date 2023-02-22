@@ -28,7 +28,7 @@ from xknx.knxip import (
     TimerNotify,
 )
 from xknx.knxip.knxip_enum import SecureSessionStatusCode
-from xknx.secure.ip_secure import (
+from xknx.secure.security_primitives import (
     calculate_message_authentication_code_cbc,
     decrypt_ctr,
     derive_device_authentication_password,
@@ -339,7 +339,7 @@ class SecureSession(TCPTransport, _IPSecureTransportLayer):
         if self.initialized:
             knx_logger.debug("Encrypting frame: %s", knxipframe)
             knxipframe = self.encrypt_frame(plain_frame=knxipframe)
-            # keepalive timer is started with first and resetted with every other
+            # keepalive timer is started with first and reset with every other
             # SecureWrapper frame (including wrapped keepalive frames themselves)
             self.start_keepalive_task()
         # TODO: disallow sending unencrypted frames over non-initialized session with
@@ -441,7 +441,6 @@ class SecureGroup(UDPTransport, _IPSecureTransportLayer):
             secure_wrapper = knxipframe.body
             try:
                 knxipframe = self.decrypt_frame(knxipframe)
-                print(secure_wrapper)
             except KNXSecureValidationError as err:
                 ip_secure_logger.warning("Could not decrypt KNXIPFrame: %s", err)
                 # Frame shall be discarded
@@ -582,13 +581,12 @@ class SecureSequenceTimer:
             else:
                 min_delay = self.min_delay_time_follower_update_notify
                 max_delay = self.max_delay_time_follower_update_notify
+        elif self.timekeeper:
+            min_delay = self.min_delay_time_keeper_periodic_notify
+            max_delay = self.max_delay_time_keeper_periodic_notify
         else:
-            if self.timekeeper:
-                min_delay = self.min_delay_time_keeper_periodic_notify
-                max_delay = self.max_delay_time_keeper_periodic_notify
-            else:
-                min_delay = self.min_delay_time_follower_periodic_notify
-                max_delay = self.max_delay_time_follower_periodic_notify
+            min_delay = self.min_delay_time_follower_periodic_notify
+            max_delay = self.max_delay_time_follower_periodic_notify
         self._notify_timer_handle = self._loop.call_later(
             random.uniform(min_delay, max_delay), self._notify_timer_expired, update
         )
@@ -713,11 +711,10 @@ class SecureSequenceTimer:
             return True
         if received_timer_value > local_timer_value - self.latency_tolerance_ms:
             return True
-        if received_timer_value <= local_timer_value - self.latency_tolerance_ms:
-            if not self.sched_update:
-                self.reschedule(
-                    update=(secure_wrapper.message_tag, secure_wrapper.serial_number)
-                )
+        if not self.sched_update:
+            self.reschedule(
+                update=(secure_wrapper.message_tag, secure_wrapper.serial_number)
+            )
         return False
 
     def handle_timer_notify(self, timer_notify: TimerNotify) -> None:
@@ -756,11 +753,10 @@ class SecureSequenceTimer:
             return
         if received_timer_value > local_timer_value - self.latency_tolerance_ms:
             return
-        if received_timer_value <= local_timer_value - self.latency_tolerance_ms:
-            if not self.sched_update:
-                self.reschedule(
-                    update=(timer_notify.message_tag, timer_notify.serial_number)
-                )
+        if not self.sched_update:
+            self.reschedule(
+                update=(timer_notify.message_tag, timer_notify.serial_number)
+            )
 
     def get_for_outgoing_secure_wrapper(self) -> int:
         """Return current timer value and handle timer update schedule."""

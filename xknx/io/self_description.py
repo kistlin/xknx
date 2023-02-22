@@ -58,7 +58,7 @@ async def request_description(
         await transport.connect()
     except OSError as err:
         raise CommunicationError(
-            "Could not setup socket to request gatway info"
+            "Could not setup socket to request gateway info"
         ) from err
     else:
         local_hpai: HPAI
@@ -95,6 +95,7 @@ async def request_description(
 
 
 class _SelfDescriptionQuery(ABC):
+    """Base class for handling descriptions request-response cycles."""
 
     expected_response_class: type[DescriptionResponse] | type[SearchResponseExtended]
 
@@ -148,7 +149,7 @@ class _SelfDescriptionQuery(ABC):
             )
             return
         self.response_received_event.set()
-        # Set gateway descriptior attribute
+        # Set gateway descriptor attribute
         gateway = GatewayDescriptor(
             ip_addr=self.transport.remote_addr[0],
             port=self.transport.remote_addr[1],

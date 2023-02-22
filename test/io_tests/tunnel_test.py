@@ -18,6 +18,7 @@ from xknx.knxip import (
     ConnectionStateResponse,
     ConnectRequest,
     ConnectResponse,
+    ConnectResponseData,
     DescriptionRequest,
     DescriptionResponse,
     DisconnectRequest,
@@ -297,7 +298,7 @@ class TestUDPTunnel:
             ConnectResponse(
                 communication_channel=23,
                 data_endpoint=gateway_data_endpoint,
-                identifier=7,
+                crd=ConnectResponseData(individual_address=IndividualAddress(7)),
             )
         )
         self.tunnel.transport.handle_knxipframe(connect_response_frame, remote_addr)
@@ -323,7 +324,7 @@ class TestUDPTunnel:
                 raw_cemi=test_cemi.to_knx(),
             )
         )
-        asyncio.create_task(self.tunnel.send_cemi(test_cemi))
+        _send_task = asyncio.create_task(self.tunnel.send_cemi(test_cemi))
         await time_travel(0)
         self.tunnel.transport.send.assert_called_once_with(
             test_telegram_frame, addr=data_endpoint_addr
@@ -410,7 +411,7 @@ class TestTCPTunnel:
             ConnectResponse(
                 communication_channel=23,
                 data_endpoint=HPAI(protocol=HostProtocol.IPV4_TCP),
-                identifier=7,
+                crd=ConnectResponseData(individual_address=IndividualAddress(7)),
             )
         )
         self.tunnel.transport.handle_knxipframe(connect_response_frame, remote_hpai)
@@ -464,7 +465,7 @@ class TestTCPTunnel:
             ConnectResponse(
                 communication_channel=23,
                 data_endpoint=HPAI(protocol=HostProtocol.IPV4_TCP),
-                identifier=7,
+                crd=ConnectResponseData(individual_address=IndividualAddress(7)),
             )
         )
         self.tunnel.transport.handle_knxipframe(connect_response_frame, remote_hpai)
@@ -516,7 +517,7 @@ class TestTCPTunnel:
             ConnectResponse(
                 communication_channel=23,
                 data_endpoint=HPAI(protocol=HostProtocol.IPV4_TCP),
-                identifier=7,
+                crd=ConnectResponseData(individual_address=IndividualAddress(7)),
             )
         )
         self.tunnel.transport.handle_knxipframe(connect_response_frame, remote_hpai)
