@@ -8,9 +8,34 @@ nav_order: 2
 
 # Unreleased changes
 
+### Bugfixes
+
+- Handle empty list for group addresses in RemoteValue.
+
+# 2.7.0 IP Device Management 2023-03-15
+
+### Protocol
+
+- Add support for Device Management Configuration service.
+- Support CEMI M_Prop messages.
+- Don't ignore CEMIFrames with source address equal to `xknx.current_address`.
+
+### Internals
+
+- Use CEMILData instead of CEMIFrame in DataSecure.
+- Move `init_from_telegram()` from CEMIFrame to CEMILData. `telegram()` is now a method of CEMILData instead of a property of CEMIFrame.
+
+# 2.6.0 Connection information 2023-02-27
+
 ### Connection
 
 - When `ConnectionConfig.individual_address` is set and a Keyring is given `ConnectionType.AUTOMATIC` will try to connect to the host of this address. If not found (in keyfile or discovery) it will raise.
+- Add CEMIFrame counters connection type and timestamp of connection start.
+
+### Internals
+
+- Lower log levels for unsupported Telegrams and add more information.
+- Move CEMIFrame parsing from Interface to CEMIHandler.
 
 # 2.5.0 Request IA 2023-02-14
 
