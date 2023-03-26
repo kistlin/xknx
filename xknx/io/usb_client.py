@@ -90,7 +90,7 @@ class USBClient:
         Puts the CEMIFrame into the send queue, where the send thread will
         eventually get and send it
         """
-        logger.debug(f"sending: {cemi}")
+        logger.debug(f"enqueueing to send: {cemi}")
         self._send_queue.put(cemi)
 
     def cemi_received(self, cemi: CEMIFrame) -> None:

@@ -235,7 +235,9 @@ class KNXHIDReportHeader:
 
 
 class KNXHIDReportBodyData:
-    """Container for `KNXHIDReportBody` initialization data"""
+    """Container for `KNXHIDReportBody` initialization data
+    `emi_id` is only an EMI ID if the protocol ID is 0x01 (KNX Tunnel)
+    """
 
     def __init__(
         self, protocol_id: ProtocolID, emi_id: EMIID, data: bytes, partial: bool

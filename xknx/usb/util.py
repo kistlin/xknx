@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import logging
-import platform
-import time
 
 import hid
-import usb
 
 logger = logging.getLogger("xknx.log")
 knx_logger = logging.getLogger("xknx.knx")
