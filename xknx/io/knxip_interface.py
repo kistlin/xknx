@@ -57,7 +57,7 @@ def knx_interface_factory(
             connection_config.idVendor,
             connection_config.idProduct,
         )
-        return USBInterface(xknx=xknx, connection_config=connection_config)
+        return USBInterface(loop=asyncio.get_running_loop(), xknx=xknx, connection_config=connection_config)
     return KNXIPInterface(xknx=xknx, connection_config=connection_config)
 
 

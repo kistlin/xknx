@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from queue import Queue
 from typing import TYPE_CHECKING
@@ -24,7 +25,8 @@ logger = logging.getLogger("xknx.log")
 class USBClient:
     """Initializes the USB interface and start the send and receive threads"""
 
-    def __init__(self, xknx: XKNX, connection_config: ConnectionConfigUSB) -> None:
+    def __init__(self, loop: asyncio.AbstractEventLoop, xknx: XKNX, connection_config: ConnectionConfigUSB) -> None:
+        self._loop: asyncio.AbstractEventLoop = loop
         self.xknx = xknx
         self.connection_config = connection_config
         self.id_vendor = self.connection_config.idVendor
@@ -57,7 +59,7 @@ class USBClient:
             self.xknx, self.usb_device, self._send_queue
         )
         self._usb_receive_thread = USBReceiveThread(
-            self.xknx, self.usb_device, self.cemi_received
+            self._loop, self.xknx, self.usb_device, self.cemi_received
         )
         self._usb_send_thread.start()
         self._usb_receive_thread.start()

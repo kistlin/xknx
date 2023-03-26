@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -19,12 +20,14 @@ class USBReceiveThread(BaseThread):
 
     def __init__(
         self,
+        loop: asyncio.AbstractEventLoop,
         xknx: XKNX,
         usb_device: USBDevice,
         cemi_received_callback: CEMICallbackType,
     ):
         """ """
         super().__init__(name="USBReceiveThread")
+        self._loop: asyncio.AbstractEventLoop = loop
         self._xknx = xknx
         self._usb_device: USBDevice = usb_device
         self._knx_to_telegram = KNXtoCEMI()
@@ -36,4 +39,4 @@ class USBReceiveThread(BaseThread):
             usb_data = self._usb_device.read()
             done, cemi_frame = self._knx_to_telegram.process(usb_data)
             if done and cemi_frame:
-                self.cemi_received_callback(cemi_frame)
+                self._loop.call_soon_threadsafe(self.cemi_received_callback, cemi_frame)

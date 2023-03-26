@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -18,10 +19,10 @@ logger = logging.getLogger("xknx.log")
 class USBInterface(Interface):
     """USB implementation of the abstract `Interface` class"""
 
-    def __init__(self, xknx: XKNX, connection_config: ConnectionConfigUSB) -> None:
+    def __init__(self, loop: asyncio.AbstractEventLoop, xknx, connection_config: ConnectionConfigUSB) -> None:
         self.xknx = xknx
         self.connection_config = connection_config
-        self.usb_client: USBClient = USBClient(xknx, connection_config)
+        self.usb_client: USBClient = USBClient(loop, xknx, connection_config)
 
     async def start(self) -> None:
         """Start the USB interface
