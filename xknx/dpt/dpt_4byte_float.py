@@ -12,6 +12,7 @@ from typing import cast
 from xknx.exceptions import ConversionError
 
 from .dpt import DPTNumeric
+from .payload import DPTArray, DPTBinary
 
 
 class DPT4ByteFloat(DPTNumeric):
@@ -36,9 +37,9 @@ class DPT4ByteFloat(DPTNumeric):
     resolution = 0.0000001
 
     @classmethod
-    def from_knx(cls, raw: tuple[int, ...]) -> float:
+    def from_knx(cls, payload: DPTArray | DPTBinary) -> float:
         """Parse/deserialize from KNX/IP raw data (big endian)."""
-        cls.test_bytesarray(raw)
+        raw = cls.validate_payload(payload)
         try:
             raw_float = cast(float, struct.unpack(">f", bytes(raw))[0])
         except struct.error:
@@ -53,11 +54,11 @@ class DPT4ByteFloat(DPTNumeric):
             return raw_float
 
     @classmethod
-    def to_knx(cls, value: float) -> tuple[int, ...]:
+    def to_knx(cls, value: float) -> DPTArray:
         """Serialize to KNX/IP raw data."""
         try:
             knx_value = float(value)
-            return tuple(struct.pack(">f", knx_value))
+            return DPTArray(struct.pack(">f", knx_value))
         except (ValueError, struct.error):
             raise ConversionError(f"Could not serialize {cls.__name__}", value=value)
 

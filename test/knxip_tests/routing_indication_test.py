@@ -2,7 +2,7 @@
 import time
 
 from xknx.cemi import CEMIFrame, CEMILData, CEMIMessageCode
-from xknx.dpt import DPTArray, DPTTime
+from xknx.dpt import DPTTime
 from xknx.knxip import KNXIPFrame, RoutingIndication
 from xknx.telegram import GroupAddress, IndividualAddress, Telegram
 from xknx.telegram.apci import GroupValueWrite
@@ -34,7 +34,7 @@ class TestKNXIPRountingIndication:
         telegram = Telegram(
             destination_address=GroupAddress(337),
             payload=GroupValueWrite(
-                DPTArray(DPTTime().to_knx(time.strptime("13:23:42", "%H:%M:%S")))
+                DPTTime().to_knx(time.strptime("13:23:42", "%H:%M:%S"))
             ),
         )
         cemi = CEMIFrame(

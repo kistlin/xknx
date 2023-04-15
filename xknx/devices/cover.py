@@ -143,7 +143,7 @@ class Cover(Device):
         self._periodic_update_task: Task | None = None
         self._travel_direction_tilt: TravelStatus | None = None
 
-    def _iter_remote_values(self) -> Iterator[RemoteValue[Any, Any]]:
+    def _iter_remote_values(self) -> Iterator[RemoteValue[Any]]:
         """Iterate the devices RemoteValue classes."""
         yield self.updown
         yield self.step
@@ -336,7 +336,7 @@ class Cover(Device):
         await self.position_current.read_state(wait_for_result=wait_for_result)
         await self.angle.read_state(wait_for_result=wait_for_result)
 
-    async def process_group_write(self, telegram: "Telegram") -> None:
+    async def process_group_write(self, telegram: Telegram) -> None:
         """Process incoming and outgoing GROUP WRITE telegram."""
         # call after_update to account for travelcalculator changes
         if await self.updown.process(telegram):

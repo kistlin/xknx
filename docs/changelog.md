@@ -8,9 +8,27 @@ nav_order: 2
 
 # Unreleased changes
 
+### Internals
+
+- Replace `asyncio.wait_for` with `asyncio.timeout`. For Python <3.11 a backport package is used.
+- Add Ruff to pre-commit and tox.
+
+# 2.8.0 Hostnames 2023-04-12
+
+### Connection
+
+- Resolve IP addresses from hostname or adapter name for `gateway_ip` or `local_ip`.
+
 ### Bugfixes
 
 - Handle empty list for group addresses in RemoteValue.
+
+### Internals
+
+- Refactor DPTBase transcoder classes
+  - Accept `DPTArray` or `DPTBinary` in `DPTBase.from_knx()` instead of raw `tuple[int]`.
+  - Return `DPTArray` or `DPTBinary` from `DPTBase.to_knx()` instead of `tuple[int, ...]`.
+  - Remove payload_valid() from RemoteValue and remove payload type form its generics parameters.
 
 # 2.7.0 IP Device Management 2023-03-15
 
