@@ -9,6 +9,7 @@ from xknx.io.connection import ConnectionConfigUSB
 from xknx.telegram import AddressFilter, Telegram
 from xknx.xknx import XKNX
 
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("xknx.log")
 logger.setLevel(logging.DEBUG)
 
