@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import logging
 import struct
+from typing import Union
 
 from xknx.cemi import CEMIMessageCode
 from xknx.usb.knx_hid_datatypes import (
     EMIID,
     DataSizeBySequenceNumber,
     ProtocolID,
+    ServiceID,
     SequenceNumber,
 )
 
@@ -18,7 +20,7 @@ class KNXUSBTransferProtocolHeaderData:
     """Container for `KNXUSBTransferProtocolHeader` initialization data"""
 
     def __init__(
-        self, body_length: int, protocol_id: ProtocolID, emi_id: EMIID
+        self, body_length: int, protocol_id: ProtocolID, emi_id: Union[EMIID, ServiceID]
     ) -> None:
         self.body_length = body_length
         self.protocol_id = protocol_id
@@ -152,7 +154,7 @@ class KNXUSBTransferProtocolHeader:
         return self._protocol_id
 
     @property
-    def emi_id(self) -> EMIID | None:
+    def emi_id(self) -> Union[EMIID, ServiceID] | None:
         """3.4.1.3.4 Protocol identifiers
         The EMI ID octet is used as an enumeration: each value (0 … 2) shall
         represent an own EMI format. Its value shall not be '0' if the

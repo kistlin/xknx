@@ -1,4 +1,4 @@
-from .knx_hid_datatypes import EMIID, PacketType, ProtocolID, SequenceNumber
+from .knx_hid_datatypes import EMIID, PacketType, ProtocolID, ServiceID, SequenceNumber
 from .knx_hid_frame import KNXHIDFrame, KNXHIDFrameData, KNXHIDReportHeaderData, KNXHIDReportBodyData, PacketInfo, PacketInfoData
 from .usb_receive_thread import USBReceiveThread
 from .usb_send_thread import USBSendThread
@@ -23,5 +23,6 @@ __all__ = [
     "USBKNXInterfaceData",
     "USBReceiveThread",
     "USBSendThread",
+    "ServiceID",
     "SequenceNumber",
 ]

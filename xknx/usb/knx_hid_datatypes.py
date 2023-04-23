@@ -64,3 +64,24 @@ class EMIID(IntEnum):
     EMI1 = 0x01
     EMI2 = 0x02
     COMMON_EMI = 0x03
+
+
+class ServiceID(IntEnum):
+    """3.5.3.2 Device feature services"""
+
+    RESERVED_NOT_USED_00 = 0x00
+    DEVICE_FEATURE_GET = 0x01
+    DEVICE_FEATURE_RESPONSE = 0x02
+    DEVICE_FEATURE_SET = 0x03
+    DEVICE_FEATURE_INFO = 0x04
+    RESERVED_NOT_USED_EF = 0xEF
+    RESERVED_NOT_USED_FF = 0xFF
+
+
+class DeviceFeatures(IntEnum):
+    """3.5.3.3 Device features"""
+    SUPPORTED_EMI_TYPE = 0x01
+    HOST_DEVICE_DEVICE_DESCRIPTOR_TYPE_0 = 0x02
+    BUS_CONNECTION_STATUS = 0x03
+    KNX_MANUFACTURER_CODE = 0x04
+    ACTIVE_EMI_TYPE = 0x05

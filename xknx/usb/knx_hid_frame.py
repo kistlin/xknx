@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import struct
+from typing import Union
 
-from .knx_hid_datatypes import EMIID, PacketType, ProtocolID, SequenceNumber
+from .knx_hid_datatypes import EMIID, PacketType, ProtocolID, ServiceID, SequenceNumber
 from .knx_hid_transfer import (
     KNXUSBTransferProtocolBody,
     KNXUSBTransferProtocolBodyData,
@@ -236,11 +237,13 @@ class KNXHIDReportHeader:
 
 class KNXHIDReportBodyData:
     """Container for `KNXHIDReportBody` initialization data
-    `emi_id` is only an EMI ID if the protocol ID is 0x01 (KNX Tunnel)
+    `emi_id` is an EMI ID if the protocol ID is 0x01 (KNX Tunnel)
+    `emi_id` is a service identifier if the protocol ID is 0x0F (Bus Access Server Feature Service)
+    3.4.1.3.4 Protocol identifiers in 09_03 Basic and System Components - Couplers v01.03.03 AS.pdf
     """
 
     def __init__(
-        self, protocol_id: ProtocolID, emi_id: EMIID, data: bytes, partial: bool
+        self, protocol_id: ProtocolID, emi_id: Union[EMIID, ServiceID], data: bytes, partial: bool
     ) -> None:
         self.protocol_id = protocol_id
         self.emi_id = emi_id

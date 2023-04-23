@@ -149,7 +149,7 @@ def get_packet_type(
 
 class KNXToUSBHIDConverter:
     """
-    This class helps splitting (pure) KNX data as bytes and creates KNXHIDFrame(s)
+    This class helps to split (pure) KNX data as bytes and creates KNXHIDFrame(s)
     which represents a USB HID frame of max. 64 octets containing KNX meta information
     and the KNX payload.
     The KNX data is expected to start with the EMI code followed by the payload
