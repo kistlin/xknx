@@ -62,7 +62,7 @@ class Device(ABC):
                 self.xknx.task_registry.unregister(task.name)
 
     @abstractmethod
-    def _iter_remote_values(self) -> Iterator[RemoteValue[Any, Any]]:
+    def _iter_remote_values(self) -> Iterator[RemoteValue[Any]]:
         """Iterate the devices RemoteValue classes."""
         # yield self.remote_value
         # yield from (<list all used RemoteValue instances>)
@@ -128,10 +128,10 @@ class Device(ABC):
 
     def has_group_address(self, group_address: DeviceGroupAddress) -> bool:
         """Test if device has given group address."""
-        for remote_value in self._iter_remote_values():
-            if remote_value.has_group_address(group_address):
-                return True
-        return False
+        return any(
+            remote_value.has_group_address(group_address)
+            for remote_value in self._iter_remote_values()
+        )
 
     def __eq__(self, other: object) -> bool:
         """Compare for quality."""

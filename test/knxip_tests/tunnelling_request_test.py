@@ -1,9 +1,10 @@
 """Unit test for KNX/IP TunnellingRequest objects."""
 import pytest
 
+from xknx.cemi import CEMIFrame, CEMILData, CEMIMessageCode
 from xknx.dpt import DPTBinary
 from xknx.exceptions import CouldNotParseKNXIP
-from xknx.knxip import CEMIFrame, CEMIMessageCode, KNXIPFrame, TunnellingRequest
+from xknx.knxip import KNXIPFrame, TunnellingRequest
 from xknx.telegram import GroupAddress, Telegram
 from xknx.telegram.apci import GroupValueWrite
 
@@ -23,17 +24,20 @@ class TestKNXIPTunnellingRequest:
         assert knxipframe.body.sequence_counter == 23
         assert isinstance(knxipframe.body.raw_cemi, bytes)
 
-        incoming_cemi = CEMIFrame()
-        incoming_cemi.from_knx(knxipframe.body.raw_cemi)
-        assert incoming_cemi.telegram == Telegram(
+        incoming_cemi = CEMIFrame.from_knx(knxipframe.body.raw_cemi)
+        assert incoming_cemi.data.telegram() == Telegram(
             destination_address=GroupAddress("9/0/8"),
             payload=GroupValueWrite(DPTBinary(1)),
         )
 
-        outgoing_cemi = CEMIFrame(code=CEMIMessageCode.L_DATA_REQ)
-        outgoing_cemi.telegram = Telegram(
-            destination_address=GroupAddress("9/0/8"),
-            payload=GroupValueWrite(DPTBinary(1)),
+        outgoing_cemi = CEMIFrame(
+            code=CEMIMessageCode.L_DATA_REQ,
+            data=CEMILData.init_from_telegram(
+                Telegram(
+                    destination_address=GroupAddress("9/0/8"),
+                    payload=GroupValueWrite(DPTBinary(1)),
+                ),
+            ),
         )
         tunnelling_request = TunnellingRequest(
             communication_channel_id=1,

@@ -1,10 +1,10 @@
 """
 Module for KNX Telegrams.
 
-The telegram class is the leightweight interaction object between
+The telegram class is the lightweight interaction object between
 
 * business logic (Lights, Covers, etc) and
-* underlaying KNX/IP abstraction (KNX-Routing/KNX-Tunneling).
+* underlying KNX/IP abstraction (KNX-Routing/KNX-Tunneling).
 
 It contains
 
@@ -15,12 +15,11 @@ It contains
 """
 from __future__ import annotations
 
-from datetime import datetime
 from enum import Enum
 
 from .address import GroupAddress, IndividualAddress, InternalGroupAddress
 from .apci import APCI
-from .tpci import TPCI, TDataGroup, TDataIndividual
+from .tpci import TPCI, TDataBroadcast, TDataGroup, TDataIndividual
 
 
 class TelegramDirection(Enum):
@@ -35,26 +34,30 @@ class Telegram:
 
     def __init__(
         self,
-        destination_address: GroupAddress
-        | IndividualAddress
-        | InternalGroupAddress
-        | None = None,
+        destination_address: GroupAddress | IndividualAddress | InternalGroupAddress,
         direction: TelegramDirection = TelegramDirection.OUTGOING,
         payload: APCI | None = None,
         source_address: IndividualAddress | None = None,
         tpci: TPCI | None = None,
     ) -> None:
         """Initialize Telegram class."""
-        self.destination_address = destination_address or GroupAddress(0)
+        self.destination_address = destination_address
         self.direction = direction
         self.payload = payload
         self.source_address = source_address or IndividualAddress(0)
-        self.timestamp = datetime.now()
-        self.tpci = tpci or (
-            TDataIndividual()
-            if isinstance(destination_address, IndividualAddress)
-            else TDataGroup()
-        )
+        self.tpci: TPCI
+        if tpci is None:
+            if isinstance(destination_address, GroupAddress):
+                if destination_address.raw == 0:
+                    self.tpci = TDataBroadcast()
+                else:
+                    self.tpci = TDataGroup()
+            elif isinstance(destination_address, IndividualAddress):
+                self.tpci = TDataIndividual()
+            else:  # InternalGroupAddress
+                self.tpci = TDataGroup()
+        else:
+            self.tpci = tpci
 
     def __str__(self) -> str:
         """Return object as readable string."""
@@ -81,17 +84,7 @@ class Telegram:
 
     def __eq__(self, other: object) -> bool:
         """Equal operator."""
-        for key, value in self.__dict__.items():
-            if key == "timestamp":
-                continue
-            if key not in other.__dict__:
-                return False
-            if other.__dict__[key] != value:
-                return False
-        for key, value in other.__dict__.items():
-            if key not in self.__dict__:
-                return False
-        return True
+        return self.__dict__ == other.__dict__
 
     def __hash__(self) -> int:
         """Hash function."""

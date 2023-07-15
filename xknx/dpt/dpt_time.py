@@ -6,6 +6,7 @@ import time
 from xknx.exceptions import ConversionError
 
 from .dpt import DPTBase
+from .payload import DPTArray, DPTBinary
 
 
 class DPTTime(DPTBase):
@@ -15,12 +16,13 @@ class DPTTime(DPTBase):
     DPT 10.001
     """
 
+    payload_type = DPTArray
     payload_length = 3
 
     @classmethod
-    def from_knx(cls, raw: tuple[int, ...]) -> time.struct_time:
+    def from_knx(cls, payload: DPTArray | DPTBinary) -> time.struct_time:
         """Parse/deserialize from KNX/IP raw data."""
-        cls.test_bytesarray(raw)
+        raw = cls.validate_payload(payload)
 
         weekday = (raw[0] & 0xE0) >> 5
         hours = raw[0] & 0x1F
@@ -45,7 +47,7 @@ class DPTTime(DPTBase):
             raise ConversionError("Could not parse DPTTime", raw=raw)
 
     @classmethod
-    def to_knx(cls, value: time.struct_time) -> tuple[int, int, int]:
+    def to_knx(cls, value: time.struct_time) -> DPTArray:
         """Serialize to KNX/IP raw data from dict with elements weekday,hours,minutes,seconds."""
         if not isinstance(value, time.struct_time):
             raise ConversionError(
@@ -60,17 +62,23 @@ class DPTTime(DPTBase):
                 weekday = value.tm_wday + 1
                 break
 
-        return (weekday << 5 | value.tm_hour, value.tm_min, value.tm_sec)
+        return DPTArray(
+            (
+                weekday << 5 | value.tm_hour,
+                value.tm_min,
+                value.tm_sec,
+            )
+        )
 
     @staticmethod
     def _test_range(weekday: int, hours: int, minutes: int, seconds: int) -> bool:
         """Test if values are in the correct value range."""
-        if weekday < 0 or weekday > 7:
+        if not 0 <= weekday <= 7:
             return False
-        if hours < 0 or hours > 23:
+        if not 0 <= hours <= 23:
             return False
-        if minutes < 0 or minutes > 59:
+        if not 0 <= minutes <= 59:
             return False
-        if seconds < 0 or seconds > 59:
+        if not 0 <= seconds <= 59:
             return False
         return True

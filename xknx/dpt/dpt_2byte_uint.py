@@ -4,6 +4,7 @@ from __future__ import annotations
 from xknx.exceptions import ConversionError
 
 from .dpt import DPTNumeric
+from .payload import DPTArray, DPTBinary
 
 
 class DPT2ByteUnsigned(DPTNumeric):
@@ -18,7 +19,6 @@ class DPT2ByteUnsigned(DPTNumeric):
     dpt_main_number = 7
     dpt_sub_number: int | None = None
     value_type = "2byte_unsigned"
-    unit = ""
     payload_length = 2
 
     value_min = 0
@@ -26,19 +26,19 @@ class DPT2ByteUnsigned(DPTNumeric):
     resolution = 1
 
     @classmethod
-    def from_knx(cls, raw: tuple[int, ...]) -> int:
+    def from_knx(cls, payload: DPTArray | DPTBinary) -> int:
         """Parse/deserialize from KNX/IP raw data."""
-        cls.test_bytesarray(raw)
+        raw = cls.validate_payload(payload)
         return (raw[0] * 256) + raw[1]
 
     @classmethod
-    def to_knx(cls, value: int | float) -> tuple[int, int]:
+    def to_knx(cls, value: int | float) -> DPTArray:
         """Serialize to KNX/IP raw data."""
         try:
             knx_value = int(value)
             if not cls._test_boundaries(knx_value):
                 raise ValueError
-            return knx_value >> 8, knx_value & 0xFF
+            return DPTArray((knx_value >> 8, knx_value & 0xFF))
         except ValueError:
             raise ConversionError(f"Could not serialize {cls.__name__}", value=value)
 
@@ -111,6 +111,14 @@ class DPTTimePeriodHrs(DPT2ByteUnsigned):
     unit = "h"
 
 
+class DPTPropDataType(DPT2ByteUnsigned):
+    """DPT 7.010 DPT_PropDataType."""
+
+    dpt_main_number = 7
+    dpt_sub_number = 10
+    value_type = "prop_data_type"
+
+
 class DPTLengthMm(DPT2ByteUnsigned):
     """DPT 7.011 Abstraction for KNX 2 Byte DPT_Length_mm (mm)."""
 
@@ -118,6 +126,7 @@ class DPTLengthMm(DPT2ByteUnsigned):
     dpt_sub_number = 11
     value_type = "length_mm"
     unit = "mm"
+    ha_device_class = "distance"
 
 
 class DPTUElCurrentmA(DPT2ByteUnsigned):
@@ -127,6 +136,7 @@ class DPTUElCurrentmA(DPT2ByteUnsigned):
     dpt_sub_number = 12
     value_type = "current"
     unit = "mA"
+    ha_device_class = "current"
 
 
 class DPTBrightness(DPT2ByteUnsigned):
@@ -136,6 +146,7 @@ class DPTBrightness(DPT2ByteUnsigned):
     dpt_sub_number = 13
     value_type = "brightness"
     unit = "lx"
+    ha_device_class = "illuminance"
 
 
 class DPTColorTemperature(DPT2ByteUnsigned):

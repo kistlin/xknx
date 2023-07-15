@@ -1,10 +1,11 @@
 """Unit test for KNX/IP RountingIndication objects."""
 import time
 
-from xknx.dpt import DPTArray, DPTBinary, DPTTemperature, DPTTime
-from xknx.knxip import CEMIFrame, KNXIPFrame, KNXIPServiceType, RoutingIndication
+from xknx.cemi import CEMIFrame, CEMILData, CEMIMessageCode
+from xknx.dpt import DPTTime
+from xknx.knxip import KNXIPFrame, RoutingIndication
 from xknx.telegram import GroupAddress, IndividualAddress, Telegram
-from xknx.telegram.apci import GroupValueRead, GroupValueResponse, GroupValueWrite
+from xknx.telegram.apci import GroupValueWrite
 
 
 class TestKNXIPRountingIndication:
@@ -24,7 +25,7 @@ class TestKNXIPRountingIndication:
         raw = bytes.fromhex("06 10 05 30 00 12 29 00 bc d0 12 02 01 51 02 00 40 f0")
         knxipframe, _ = KNXIPFrame.from_knx(raw)
 
-        assert knxipframe.header.to_knx() == raw[0:6]
+        assert knxipframe.header.to_knx() == raw[:6]
         assert knxipframe.body.to_knx() == raw[6:]
         assert knxipframe.to_knx() == raw
 
@@ -33,12 +34,18 @@ class TestKNXIPRountingIndication:
         telegram = Telegram(
             destination_address=GroupAddress(337),
             payload=GroupValueWrite(
-                DPTArray(DPTTime().to_knx(time.strptime("13:23:42", "%H:%M:%S")))
+                DPTTime().to_knx(time.strptime("13:23:42", "%H:%M:%S"))
             ),
         )
-        cemi = CEMIFrame(src_addr=IndividualAddress("1.2.2"))
-        cemi.telegram = telegram
-        cemi.set_hops(5)
+        cemi = CEMIFrame(
+            code=CEMIMessageCode.L_DATA_IND,
+            data=CEMILData.init_from_telegram(
+                telegram,
+                src_addr=IndividualAddress("1.2.2"),
+            ),
+        )
+        assert isinstance(cemi.data, CEMILData)
+        cemi.data.hops = 5
         routing_indication = RoutingIndication(raw_cemi=cemi.to_knx())
         knxipframe = KNXIPFrame.init_from_body(routing_indication)
 
@@ -46,7 +53,7 @@ class TestKNXIPRountingIndication:
             "06 10 05 30 00 14 29 00 bc d0 12 02 01 51 04 00 80 0d 17 2a"
         )
 
-        assert knxipframe.header.to_knx() == raw[0:6]
+        assert knxipframe.header.to_knx() == raw[:6]
         assert knxipframe.body.to_knx() == raw[6:]
         assert knxipframe.to_knx() == raw
 
@@ -60,7 +67,7 @@ class TestKNXIPRountingIndication:
         routing_indication = RoutingIndication(raw_cemi=raw_cemi)
         knxipframe2 = KNXIPFrame.init_from_body(routing_indication)
 
-        assert knxipframe2.header.to_knx() == raw[0:6]
+        assert knxipframe2.header.to_knx() == raw[:6]
         assert knxipframe2.body.to_knx() == raw[6:]
         assert knxipframe2.to_knx() == raw
 

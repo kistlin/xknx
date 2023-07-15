@@ -37,10 +37,18 @@ class TestKNXIPInterface:
         interface = knx_interface_factory(self.xknx, connection_config)
         with patch("xknx.io.KNXIPInterface._start_automatic") as start_automatic_mock:
             await interface.start()
-            start_automatic_mock.assert_called_once_with()
+            start_automatic_mock.assert_called_once_with(local_ip=None, keyring=None)
             assert threading.active_count() == 1
 
         async def gateway_generator_mock(_):
+            secure_interface = GatewayDescriptor(
+                ip_addr="10.1.2.3",
+                port=3671,
+                supports_tunnelling_tcp=True,
+                supports_secure=True,
+            )
+            secure_interface.tunnelling_requires_secure = True
+            yield secure_interface
             yield GatewayDescriptor(
                 ip_addr="10.1.2.3", port=3671, supports_tunnelling_tcp=True
             )
@@ -55,6 +63,9 @@ class TestKNXIPInterface:
             "xknx.io.knxip_interface.GatewayScanner.async_scan",
             new=gateway_generator_mock,
         ), patch(
+            "xknx.io.KNXIPInterface._start_secure_tunnelling_tcp",
+            side_effect=InvalidSecureConfiguration("Error"),
+        ) as start_secure_tunnelling_tcp, patch(
             "xknx.io.KNXIPInterface._start_tunnelling_tcp",
             side_effect=CommunicationError("Error"),
         ) as start_tunnelling_tcp_mock, patch(
@@ -66,16 +77,111 @@ class TestKNXIPInterface:
         ) as start_routing_mock:
             with pytest.raises(CommunicationError):
                 await interface.start()
+            start_secure_tunnelling_tcp.assert_called_once()
             start_tunnelling_tcp_mock.assert_called_once()
             start_tunnelling_udp_mock.assert_called_once()
             start_routing_mock.assert_called_once()
+
+    async def test_start_automatic_with_keyring(self):
+        """Test starting with automatic mode and keyring."""
+        connection_config = ConnectionConfig(
+            secure_config=SecureConfig(
+                knxkeys_file_path=self.knxkeys_file,
+                knxkeys_password="password",
+            )
+        )
+        assert connection_config.connection_type == ConnectionType.AUTOMATIC
+        interface = knx_interface_factory(self.xknx, connection_config)
+
+        # in the test keyfile the only host is 1.0.0 - others shall be skipped
+        async def gateway_generator_mock(_):
+            yield GatewayDescriptor(
+                ip_addr="10.1.5.5",
+                port=3671,
+                supports_tunnelling_tcp=True,
+                individual_address=IndividualAddress("5.0.0"),
+            )
+            yield GatewayDescriptor(
+                ip_addr="10.1.0.0",
+                port=3671,
+                supports_tunnelling_tcp=True,
+                individual_address=IndividualAddress("1.0.0"),
+            )
+
+        with patch(
+            "xknx.io.knxip_interface.GatewayScanner.async_scan",
+            new=gateway_generator_mock,
+        ), patch(
+            "xknx.io.KNXIPInterface._start_tunnelling_tcp",
+        ) as start_tunnelling_tcp_mock:
+            await interface.start()
+            start_tunnelling_tcp_mock.assert_called_once_with(
+                gateway_ip="10.1.0.0",
+                gateway_port=3671,
+            )
+
+    async def test_start_automatic_with_keyring_and_ia(self):
+        """Test starting with automatic mode and keyring and individual address."""
+        connection_config = ConnectionConfig(
+            individual_address=IndividualAddress("1.0.12"),
+            secure_config=SecureConfig(
+                knxkeys_file_path=self.knxkeys_file,
+                knxkeys_password="password",
+            ),
+        )
+        assert connection_config.connection_type == ConnectionType.AUTOMATIC
+        interface = knx_interface_factory(self.xknx, connection_config)
+
+        # in the test keyfile the only host is 1.0.0 - others shall be skipped
+        async def gateway_generator_mock(_):
+            yield GatewayDescriptor(
+                ip_addr="10.1.5.5",
+                port=3671,
+                supports_tunnelling_tcp=True,
+                individual_address=IndividualAddress("5.0.0"),
+            )
+            yield GatewayDescriptor(
+                ip_addr="10.1.0.0",
+                port=3671,
+                supports_tunnelling_tcp=True,
+                individual_address=IndividualAddress("1.0.0"),
+            )
+
+        with patch(
+            "xknx.io.knxip_interface.GatewayScanner.async_scan",
+            new=gateway_generator_mock,
+        ), patch(
+            "xknx.io.KNXIPInterface._start_tunnelling_tcp",
+        ) as start_tunnelling_tcp_mock:
+            await interface.start()
+            start_tunnelling_tcp_mock.assert_called_once_with(
+                gateway_ip="10.1.0.0",
+                gateway_port=3671,
+            )
+
+        # IA not listed in keyring
+        invalid_config = ConnectionConfig(
+            individual_address=IndividualAddress("5.5.5"),
+            secure_config=SecureConfig(
+                knxkeys_file_path=self.knxkeys_file,
+                knxkeys_password="password",
+            ),
+        )
+        assert invalid_config.connection_type == ConnectionType.AUTOMATIC
+        interface = knx_interface_factory(self.xknx, invalid_config)
+        with patch(
+            "xknx.io.knxip_interface.GatewayScanner.async_scan",
+            new=gateway_generator_mock,
+        ), pytest.raises(InvalidSecureConfiguration):
+            await interface.start()
 
     async def test_start_udp_tunnel_connection(self):
         """Test starting UDP tunnel connection."""
         # without gateway_ip automatic is called
         gateway_ip = "127.0.0.2"
         connection_config = ConnectionConfig(
-            connection_type=ConnectionType.TUNNELING, gateway_ip=gateway_ip
+            connection_type=ConnectionType.TUNNELING,
+            gateway_ip=gateway_ip,
         )
         with patch(
             "xknx.io.KNXIPInterface._start_tunnelling_udp"
@@ -85,6 +191,7 @@ class TestKNXIPInterface:
             start_tunnelling_udp.assert_called_once_with(
                 gateway_ip=gateway_ip,
                 gateway_port=3671,
+                local_ip=None,
             )
         with patch("xknx.io.tunnel.UDPTunnel.connect") as connect_udp:
             interface = knx_interface_factory(self.xknx, connection_config)
@@ -98,8 +205,7 @@ class TestKNXIPInterface:
             assert interface._interface.auto_reconnect_wait == 3
             assert interface._interface.route_back is False
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_udp.assert_called_once_with()
 
@@ -128,8 +234,39 @@ class TestKNXIPInterface:
             assert interface._interface.auto_reconnect
             assert interface._interface.auto_reconnect_wait == 3
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
+            )
+            connect_tcp.assert_called_once_with()
+
+    async def test_start_tcp_tunnel_connection_with_ia(self):
+        """Test starting TCP tunnel connection requesting specific tunnel."""
+        # without gateway_ip automatic is called
+        gateway_ip = "127.0.0.2"
+        connection_config = ConnectionConfig(
+            connection_type=ConnectionType.TUNNELING_TCP,
+            gateway_ip=gateway_ip,
+            individual_address="1.1.1",
+        )
+        with patch(
+            "xknx.io.KNXIPInterface._start_tunnelling_tcp"
+        ) as start_tunnelling_tcp:
+            interface = knx_interface_factory(self.xknx, connection_config)
+            await interface.start()
+            start_tunnelling_tcp.assert_called_once_with(
+                gateway_ip=gateway_ip,
+                gateway_port=3671,
+            )
+        with patch("xknx.io.tunnel.TCPTunnel.connect") as connect_tcp:
+            interface = knx_interface_factory(self.xknx, connection_config)
+            await interface.start()
+            assert isinstance(interface._interface, TCPTunnel)
+            assert interface._interface.gateway_ip == gateway_ip
+            assert interface._interface.gateway_port == 3671
+            assert interface._interface._requested_address == IndividualAddress("1.1.1")
+            assert interface._interface.auto_reconnect
+            assert interface._interface.auto_reconnect_wait == 3
+            assert (  # pylint: disable=comparison-with-callable
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_tcp.assert_called_once_with()
 
@@ -143,17 +280,17 @@ class TestKNXIPInterface:
         with patch("xknx.io.KNXIPInterface._start_routing") as start_routing:
             interface = knx_interface_factory(self.xknx, connection_config)
             await interface.start()
-            start_routing.assert_called_once_with(
-                local_ip=local_ip, multicast_group="224.0.23.12", multicast_port=3671
-            )
+            start_routing.assert_called_once_with(local_ip=local_ip)
+
         with patch("xknx.io.routing.Routing.connect") as connect_routing:
             interface = knx_interface_factory(self.xknx, connection_config)
             await interface.start()
             assert isinstance(interface._interface, Routing)
             assert interface._interface.local_ip == local_ip
+            assert interface._interface.multicast_group == "224.0.23.12"
+            assert interface._interface.multicast_port == 3671
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_routing.assert_called_once_with()
 
@@ -173,38 +310,38 @@ class TestKNXIPInterface:
         ) as start_automatic_mock:
             interface = knx_interface_factory(self.xknx, connection_config)
             await interface.start()
-            start_automatic_mock.assert_called_once_with()
+            start_automatic_mock.assert_called_once_with(local_ip=None, keyring=None)
 
-    async def test_threaded_send_telegram(self):
-        """Test sending telegram with threaded connection."""
+    async def test_threaded_send_cemi(self):
+        """Test sending cemi with threaded connection."""
         # pylint: disable=attribute-defined-outside-init
         self.main_thread = threading.get_ident()
 
         def assert_thread(*args, **kwargs):
             """Test threaded connection."""
             assert self.main_thread != threading.get_ident()
-            return DEFAULT  # to not disable `return_value` of send_telegram_mock
+            return DEFAULT  # to not disable `return_value` of send_cemi_mock
 
         local_ip = "127.0.0.1"
         # set local_ip to avoid gateway scanner; use routing as it is the simplest mode
         connection_config = ConnectionConfig(
             connection_type=ConnectionType.ROUTING, local_ip=local_ip, threaded=True
         )
-        telegram_mock = Mock()
+        cemi_mock = Mock()
         with patch(
             "xknx.io.routing.Routing.connect", side_effect=assert_thread
         ) as connect_routing_mock, patch(
-            "xknx.io.routing.Routing.send_telegram",
+            "xknx.io.routing.Routing.send_cemi",
             side_effect=assert_thread,
             return_value="test",
-        ) as send_telegram_mock, patch(
+        ) as send_cemi_mock, patch(
             "xknx.io.routing.Routing.disconnect", side_effect=assert_thread
         ) as disconnect_routing_mock:
             interface = knx_interface_factory(self.xknx, connection_config)
             await interface.start()
             connect_routing_mock.assert_called_once_with()
-            assert await interface.send_telegram(telegram_mock) == "test"
-            send_telegram_mock.assert_called_once_with(telegram_mock)
+            assert await interface.send_cemi(cemi_mock) == "test"
+            send_cemi_mock.assert_called_once_with(cemi_mock)
             await interface.stop()
             disconnect_routing_mock.assert_called_once_with()
             assert interface._interface is None
@@ -247,8 +384,7 @@ class TestKNXIPInterface:
                 == "authenticationcode"
             )
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_secure.assert_called_once_with()
 
@@ -281,8 +417,7 @@ class TestKNXIPInterface:
                 == "authenticationcode"
             )
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_secure.assert_called_once_with()
 
@@ -336,8 +471,7 @@ class TestKNXIPInterface:
                 == "authenticationcode"
             )
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_secure.assert_called_once_with()
 
@@ -368,8 +502,7 @@ class TestKNXIPInterface:
                 == "authenticationcode"
             )
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_secure.assert_called_once_with()
 
@@ -462,8 +595,7 @@ class TestKNXIPInterface:
                 3671,
             )
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_secure.assert_called_once_with()
 
@@ -487,7 +619,6 @@ class TestKNXIPInterface:
                 3671,
             )
             assert (  # pylint: disable=comparison-with-callable
-                interface._interface.telegram_received_callback
-                == interface.telegram_received
+                interface._interface.cemi_received_callback == interface.cemi_received
             )
             connect_secure.assert_called_once_with()

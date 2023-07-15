@@ -2,9 +2,8 @@ import logging
 import queue
 from queue import Queue
 
+from xknx.cemi import CEMIFrame
 from xknx.core.thread import BaseThread
-from xknx.knxip import CEMIFrame, CEMIMessageCode
-from xknx.telegram import Telegram
 from xknx.usb.knx_hid_helper import KNXToUSBHIDConverter
 from xknx.usb.util import USBDevice
 
@@ -14,7 +13,7 @@ logger = logging.getLogger("xknx.log")
 class USBSendThread(BaseThread):
     """ """
 
-    def __init__(self, xknx, usb_device: USBDevice, queue: Queue[Telegram]):
+    def __init__(self, xknx, usb_device: USBDevice, queue: Queue[CEMIFrame]):
         """ """
         super().__init__(name="USBSendThread")
         self.xknx = xknx
@@ -25,13 +24,7 @@ class USBSendThread(BaseThread):
         """ """
         while self._is_active.is_set():
             try:
-                telegram = self._queue.get(block=True)
-                emi_code = CEMIMessageCode.L_DATA_REQ
-                # create a cEMI frame from the telegram
-                cemi = CEMIFrame.init_from_telegram(
-                    telegram=telegram,
-                    code=emi_code
-                )
+                cemi = self._queue.get(block=True)
                 data = bytes(cemi.to_knx())
                 hid_frames = KNXToUSBHIDConverter.split_into_hid_frames(data)
                 # after successful splitting actually send the frames

@@ -14,6 +14,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, TypeVar
 
+from xknx.cemi import CEMIFrame
 from xknx.exceptions import (
     CommunicationError,
     InvalidSecureConfiguration,
@@ -21,11 +22,11 @@ from xknx.exceptions import (
 )
 from xknx.io import util
 from xknx.io.usb_interface import USBInterface
-from xknx.secure.keyring import XMLInterface, load_keyring
-from xknx.telegram import IndividualAddress, Telegram
+from xknx.secure.keyring import InterfaceType, Keyring, XMLInterface, load_keyring
+from xknx.telegram import IndividualAddress
 
 from .connection import ConnectionConfig, ConnectionConfigUSB, ConnectionType
-from .const import DEFAULT_INDIVIDUAL_ADDRESS, DEFAULT_MCAST_GRP, DEFAULT_MCAST_PORT
+from .const import DEFAULT_INDIVIDUAL_ADDRESS
 from .gateway_scanner import GatewayDescriptor, GatewayScanner
 from .routing import Routing, SecureRouting
 from .self_description import request_description
@@ -77,49 +78,91 @@ class KNXIPInterface:
 
     async def _start(self) -> None:
         """Start interface. Connecting KNX/IP device with the selected method."""
+        if gateway_ip := self.connection_config.gateway_ip:
+            gateway_ip = await util.validate_ip(gateway_ip, address_name="Gateway IP")
+        if local_ip := self.connection_config.local_ip:
+            local_ip = await util.validate_ip(local_ip, address_name="Local IP")
+        keyring: Keyring | None = None
+        if secure_config := self.connection_config.secure_config:
+            if (
+                secure_config.knxkeys_file_path is not None
+                and secure_config.knxkeys_password is not None
+            ):
+                keyring = await load_keyring(
+                    secure_config.knxkeys_file_path,
+                    secure_config.knxkeys_password,
+                )
+        self.xknx.cemi_handler.data_secure_init(keyring=keyring)
+
         if self.connection_config.connection_type == ConnectionType.ROUTING:
-            await self._start_routing(
-                local_ip=self.connection_config.local_ip,
-                multicast_group=self.connection_config.multicast_group,
-                multicast_port=self.connection_config.multicast_port,
-            )
+            await self._start_routing(local_ip=local_ip)
         elif self.connection_config.connection_type == ConnectionType.ROUTING_SECURE:
-            await self._start_secure_routing()
+            await self._start_secure_routing(local_ip=local_ip, keyring=keyring)
         elif (
             self.connection_config.connection_type == ConnectionType.TUNNELING
-            and self.connection_config.gateway_ip is not None
+            and gateway_ip is not None
         ):
             await self._start_tunnelling_udp(
-                gateway_ip=self.connection_config.gateway_ip,
+                gateway_ip=gateway_ip,
                 gateway_port=self.connection_config.gateway_port,
+                local_ip=local_ip,
             )
         elif (
             self.connection_config.connection_type == ConnectionType.TUNNELING_TCP
-            and self.connection_config.gateway_ip is not None
+            and gateway_ip is not None
         ):
             await self._start_tunnelling_tcp(
-                gateway_ip=self.connection_config.gateway_ip,
+                gateway_ip=gateway_ip,
                 gateway_port=self.connection_config.gateway_port,
             )
         elif (
             self.connection_config.connection_type
             == ConnectionType.TUNNELING_TCP_SECURE
-            and self.connection_config.gateway_ip is not None
+            and gateway_ip is not None
         ):
             await self._start_secure_tunnelling_tcp(
-                gateway_ip=self.connection_config.gateway_ip,
+                gateway_ip=gateway_ip,
                 gateway_port=self.connection_config.gateway_port,
+                keyring=keyring,
             )
         else:
-            await self._start_automatic()
+            await self._start_automatic(local_ip=local_ip, keyring=keyring)
 
-    async def _start_automatic(self) -> None:
+    async def _start_automatic(
+        self,
+        local_ip: str | None,
+        keyring: Keyring | None,
+    ) -> None:
         """Start GatewayScanner and connect to the found device."""
+        keyring_host_filter: set[IndividualAddress] = set()
+        if keyring:
+            if required_addr := self.connection_config.individual_address:
+                _host_ia = keyring.get_tunnel_host_by_interface(
+                    tunnelling_slot=required_addr
+                )
+                if _host_ia is None:
+                    raise InvalidSecureConfiguration(
+                        f"No host for required address {required_addr} found in keyring file."
+                    )
+                keyring_host_filter.add(_host_ia)
+            else:
+                keyring_host_filter.update(
+                    interface.host
+                    for interface in keyring.interfaces
+                    if interface.host is not None
+                    and interface.type is InterfaceType.TUNNELING
+                )
         async for gateway in GatewayScanner(
             self.xknx,
-            local_ip=self.connection_config.local_ip,
+            local_ip=local_ip,
             scan_filter=self.connection_config.scan_filter,
         ).async_scan():
+            if (
+                keyring_host_filter
+                and gateway.individual_address not in keyring_host_filter
+            ):
+                logger.debug("Skipping %s. No match in keyring file", gateway)
+                continue
             try:
                 if gateway.supports_tunnelling_tcp:
                     if gateway.tunnelling_requires_secure:
@@ -127,6 +170,7 @@ class KNXIPInterface:
                             gateway_ip=gateway.ip_addr,
                             gateway_port=gateway.port,
                             gateway_descriptor=gateway,
+                            keyring=keyring,
                         )
                     else:
                         await self._start_tunnelling_tcp(
@@ -140,19 +184,25 @@ class KNXIPInterface:
                     await self._start_tunnelling_udp(
                         gateway_ip=gateway.ip_addr,
                         gateway_port=gateway.port,
+                        local_ip=local_ip,
                     )
                 elif gateway.supports_routing and not gateway.routing_requires_secure:
-                    await self._start_routing(
-                        local_ip=self.connection_config.local_ip,
-                    )
+                    await self._start_routing(local_ip=local_ip)
             except CommunicationError as ex:
-                logger.debug("Could not connect to %s: %s", gateway, ex)
+                logger.debug("Skipping %s. Could not connect: %s", gateway, ex)
+                continue
+            except InvalidSecureConfiguration as ex:
+                logger.debug(
+                    "Skipping %s. Invalid secure configuration: %s", gateway, ex
+                )
                 continue
             else:
                 self._gateway_info = gateway
                 break
         else:
-            raise CommunicationError("No usable KNX/IP device found.")
+            raise CommunicationError(
+                f"No usable KNX/IP device found{' in keyring file' if keyring_host_filter else ''}."
+            )
 
     async def _start_tunnelling_tcp(
         self,
@@ -160,17 +210,22 @@ class KNXIPInterface:
         gateway_port: int,
     ) -> None:
         """Start KNX/IP TCP tunnel."""
-        util.validate_ip(gateway_ip, address_name="Gateway IP address")
+        tunnel_address = self.connection_config.individual_address
+
         logger.debug(
-            "Starting tunnel to %s:%s over TCP",
+            "Starting tunnel to %s:%s over TCP%s",
             gateway_ip,
             gateway_port,
+            f" requesting individual address {tunnel_address}"
+            if tunnel_address
+            else "",
         )
         self._interface = TCPTunnel(
             self.xknx,
             gateway_ip=gateway_ip,
             gateway_port=gateway_port,
-            telegram_received_callback=self.telegram_received,
+            individual_address=tunnel_address,
+            cemi_received_callback=self.cemi_received,
             auto_reconnect=self.connection_config.auto_reconnect,
             auto_reconnect_wait=self.connection_config.auto_reconnect_wait,
         )
@@ -181,6 +236,7 @@ class KNXIPInterface:
         gateway_ip: str,
         gateway_port: int,
         gateway_descriptor: GatewayDescriptor | None = None,
+        keyring: Keyring | None = None,
     ) -> None:
         """Start KNX/IP Secure TCP tunnel."""
         if (secure_config := self.connection_config.secure_config) is None:
@@ -195,32 +251,31 @@ class KNXIPInterface:
             device_authentication_password = (
                 secure_config.device_authentication_password
             )
-        elif (
-            secure_config.knxkeys_file_path is not None
-            and secure_config.knxkeys_password is not None
-        ):
+        elif keyring is not None:
             _gateway = gateway_descriptor or await request_description(
                 gateway_ip=gateway_ip, gateway_port=gateway_port
             )
-            xml_interface = await self._get_tunnel_interface_from_keyfile(
-                keyfile_path=secure_config.knxkeys_file_path,
-                keyfile_password=secure_config.knxkeys_password,
+            xml_interface = self._get_tunnel_interface_from_keyring(
+                keyring=keyring,
                 gateway_descriptor=_gateway,
+                individual_address=self.connection_config.individual_address,
                 config_user_id=secure_config.user_id,
             )
-            user_id = xml_interface.user_id
-            if (_user_password := xml_interface.decrypted_password) is None:
+            if (
+                xml_interface.user_id is None
+                or xml_interface.decrypted_password is None
+            ):
                 raise InvalidSecureConfiguration(
-                    f"No password found for tunnel {xml_interface.individual_address} user_id {user_id}"
+                    f"No user_id or password found for tunnel {xml_interface.individual_address}"
                 )
-            user_password = _user_password
+            user_id = xml_interface.user_id
+            user_password = xml_interface.decrypted_password
             device_authentication_password = xml_interface.decrypted_authentication
         else:
             raise InvalidSecureConfiguration(
                 "No `user_id` or `knxkeys_file_path` and password found in secure configuration"
             )
 
-        util.validate_ip(gateway_ip, address_name="Gateway IP address")
         logger.debug(
             "Starting secure tunnel to %s:%s over TCP",
             gateway_ip,
@@ -235,31 +290,29 @@ class KNXIPInterface:
             user_id=user_id,
             user_password=user_password,
             device_authentication_password=device_authentication_password,
-            telegram_received_callback=self.telegram_received,
+            cemi_received_callback=self.cemi_received,
         )
         await self._interface.connect()
 
-    async def _get_tunnel_interface_from_keyfile(
-        self,
-        keyfile_path: str,
-        keyfile_password: str,
+    @staticmethod
+    def _get_tunnel_interface_from_keyring(
+        keyring: Keyring,
         gateway_descriptor: GatewayDescriptor,
+        individual_address: IndividualAddress | None = None,
         config_user_id: int | None = None,
     ) -> XMLInterface:
         """
-        Get tunnel interface from keyfile.
+        Get tunnel interface from keyring.
 
         Precedence: configured individual address > configured user id > first free tunnel interface
         """
-        keyring = await load_keyring(
-            keyfile_path,
-            keyfile_password,
-        )
-        if _ia := self.connection_config.individual_address:
-            if xml_interface := keyring.get_tunnel_interface_by_individual_address(_ia):
+        if individual_address:
+            if xml_interface := keyring.get_tunnel_interface_by_individual_address(
+                individual_address
+            ):
                 return xml_interface
             raise InvalidSecureConfiguration(
-                f"Interface with individual address {_ia} not found in keyfile"
+                f"Interface with individual address {individual_address} not found in keyfile"
             )
 
         if not (host_ia := gateway_descriptor.individual_address):
@@ -298,21 +351,19 @@ class KNXIPInterface:
         self,
         gateway_ip: str,
         gateway_port: int,
+        local_ip: str | None,
     ) -> None:
         """Start KNX/IP UDP tunnel."""
-        util.validate_ip(gateway_ip, address_name="Gateway IP address")
-        local_ip = self.connection_config.local_ip or util.find_local_ip(
-            gateway_ip=gateway_ip
-        )
         local_port = self.connection_config.local_port
         route_back = self.connection_config.route_back
+
+        local_ip = local_ip or util.find_local_ip(gateway_ip=gateway_ip)
         if local_ip is None:
             local_ip = await util.get_default_local_ip(gateway_ip)
             if local_ip is None:
                 raise XKNXException("No network interface found.")
             route_back = True
             logger.debug("Falling back to default interface and enabling route back.")
-        util.validate_ip(local_ip, address_name="Local IP address")
 
         logger.debug(
             "Starting tunnel from %s:%s to %s:%s",
@@ -328,23 +379,21 @@ class KNXIPInterface:
             local_ip=local_ip,
             local_port=local_port,
             route_back=route_back,
-            telegram_received_callback=self.telegram_received,
+            cemi_received_callback=self.cemi_received,
             auto_reconnect=self.connection_config.auto_reconnect,
             auto_reconnect_wait=self.connection_config.auto_reconnect_wait,
         )
         await self._interface.connect()
 
-    async def _start_routing(
-        self,
-        local_ip: str | None = None,
-        multicast_group: str = DEFAULT_MCAST_GRP,
-        multicast_port: int = DEFAULT_MCAST_PORT,
-    ) -> None:
+    async def _start_routing(self, local_ip: str | None) -> None:
         """Start KNX/IP Routing."""
+        multicast_group = self.connection_config.multicast_group
+        multicast_port = self.connection_config.multicast_port
+
         local_ip = local_ip or await util.get_default_local_ip()
         if local_ip is None:
             raise XKNXException("No network interface found.")
-        util.validate_ip(local_ip, address_name="Local IP address")
+
         individual_address = (
             self.connection_config.individual_address or DEFAULT_INDIVIDUAL_ADDRESS
         )
@@ -359,7 +408,7 @@ class KNXIPInterface:
         self._interface = Routing(
             self.xknx,
             individual_address=individual_address,
-            telegram_received_callback=self.telegram_received,
+            cemi_received_callback=self.cemi_received,
             local_ip=local_ip,
             multicast_group=multicast_group,
             multicast_port=multicast_port,
@@ -368,10 +417,8 @@ class KNXIPInterface:
 
     async def _start_secure_routing(
         self,
-        latency_ms: int | None = None,
-        local_ip: str | None = None,
-        multicast_group: str = DEFAULT_MCAST_GRP,
-        multicast_port: int = DEFAULT_MCAST_PORT,
+        local_ip: str | None,
+        keyring: Keyring | None = None,
     ) -> None:
         """Start KNX/IP Routing."""
         if self.connection_config.secure_config is None:
@@ -380,18 +427,8 @@ class KNXIPInterface:
         latency_ms = self.connection_config.secure_config.latency_ms
         multicast_group = self.connection_config.multicast_group
         multicast_port = self.connection_config.multicast_port
-        if (
-            self.connection_config.secure_config.knxkeys_file_path is not None
-            and self.connection_config.secure_config.knxkeys_password is not None
-        ):
-            keyring = await load_keyring(
-                self.connection_config.secure_config.knxkeys_file_path,
-                self.connection_config.secure_config.knxkeys_password,
-            )
-            if keyring.backbone is None:
-                raise InvalidSecureConfiguration(
-                    "No backbone key found in knxkeys file"
-                )
+
+        if keyring is not None and keyring.backbone is not None:
             # default to manually configured values
             backbone_key = backbone_key or keyring.backbone.decrypted_key
             latency_ms = latency_ms or keyring.backbone.latency
@@ -402,10 +439,10 @@ class KNXIPInterface:
                 "No backbone key found in secure configuration"
             )
 
-        local_ip = self.connection_config.local_ip or await util.get_default_local_ip()
+        local_ip = local_ip or await util.get_default_local_ip()
         if local_ip is None:
             raise XKNXException("No network interface found.")
-        util.validate_ip(local_ip, address_name="Local IP address")
+
         individual_address = (
             self.connection_config.individual_address or DEFAULT_INDIVIDUAL_ADDRESS
         )
@@ -420,7 +457,7 @@ class KNXIPInterface:
         self._interface = SecureRouting(
             self.xknx,
             individual_address=individual_address,
-            telegram_received_callback=self.telegram_received,
+            cemi_received_callback=self.cemi_received,
             local_ip=local_ip,
             backbone_key=backbone_key,
             latency_ms=latency_ms,
@@ -435,21 +472,17 @@ class KNXIPInterface:
             await self._interface.disconnect()
             self._interface = None
 
-    async def telegram_received(self, telegram: Telegram) -> list[Telegram] | None:
-        """Put received telegram into queue. Callback for having received telegram."""
-        if isinstance(telegram.destination_address, IndividualAddress):
-            if telegram.destination_address != self.xknx.current_address:
-                return None
-            return self.xknx.management.process(telegram)
+    def cemi_received(self, raw_cemi: bytes) -> None:
+        """Pass raw CEMIFrame data to CEMIHandler. Callback for having received CEMIFrames."""
+        self.xknx.cemi_handler.handle_raw_cemi(raw_cemi)
 
-        self.xknx.telegrams.put_nowait(telegram)
-        return None
-
-    async def send_telegram(self, telegram: Telegram) -> None:
-        """Send telegram to connected device (either Tunneling or Routing)."""
+    async def send_cemi(self, cemi: CEMIFrame) -> None:
+        """Send CEMIFrame to connected device (either Tunneling or Routing)."""
+        # to ease converting L_Data.req CEMI frames to L_Data.ind and local confirmation
+        # in routing we pass `CEMIFrame` from the CEMIHandler here, instead of raw bytes
         if self._interface is None:
             raise CommunicationError("KNX/IP interface not connected")
-        return await self._interface.send_telegram(telegram)
+        return await self._interface.send_cemi(cemi)
 
     async def gateway_info(self) -> GatewayDescriptor | None:
         """Get gateway descriptor from interface."""
@@ -490,13 +523,9 @@ class KNXIPInterfaceThreaded(KNXIPInterface):
         loop_loaded.set()
         self._thread_loop.run_forever()
 
-    async def _await_from_different_thread(
-        self,
-        coro: Awaitable[T],
-        target_loop: asyncio.AbstractEventLoop,
-    ) -> T:
+    async def _await_from_connection_thread(self, coro: Awaitable[T]) -> T:
         """Await coroutine in different thread."""
-        fut = asyncio.run_coroutine_threadsafe(coro, target_loop)
+        fut = asyncio.run_coroutine_threadsafe(coro, self._thread_loop)
         finished = threading.Event()
 
         def fut_finished_cb(_: concurrent.futures.Future[T]) -> None:
@@ -504,13 +533,13 @@ class KNXIPInterfaceThreaded(KNXIPInterface):
             finished.set()
 
         fut.add_done_callback(fut_finished_cb)
-        # wait on that event in an executor, yielding control to current loop
-        await asyncio.get_running_loop().run_in_executor(None, finished.wait)
+        # wait on that event in an executor, yielding control to _main_loop
+        await self._main_loop.run_in_executor(None, finished.wait)
         return fut.result()
 
     async def start(self) -> None:
         """Start KNX/IP interface."""
-        return await self._await_from_different_thread(self._start(), self._thread_loop)
+        return await self._await_from_connection_thread(self._start())
 
     async def stop(self) -> None:
         """
@@ -519,34 +548,28 @@ class KNXIPInterfaceThreaded(KNXIPInterface):
         Can not be restarted, create a new instance instead.
         """
         if self._interface is not None:
-            await self._await_from_different_thread(
-                self._interface.disconnect(), self._thread_loop
-            )
+            await self._await_from_connection_thread(self._interface.disconnect())
             self._interface = None
         self._thread_loop.call_soon_threadsafe(self._thread_loop.stop)
         self.connection_thread.join()
 
-    async def telegram_received(self, telegram: Telegram) -> list[Telegram] | None:
-        """Put received telegram into queue. Callback for having received telegram."""
-        return await self._await_from_different_thread(
-            super().telegram_received(telegram), self._main_loop
-        )
+    def cemi_received(self, raw_cemi: bytes) -> None:
+        """Pass CEMIFrame to CEMIHandler. Callback for having received CEMIFrames."""
+        self._main_loop.call_soon_threadsafe(super().cemi_received, raw_cemi)
 
-    async def send_telegram(self, telegram: Telegram) -> None:
-        """Send telegram to connected device (either Tunneling or Routing)."""
+    async def send_cemi(self, cemi: CEMIFrame) -> None:
+        """Send CEMIFrame to connected device (either Tunneling or Routing)."""
         if self._interface is None:
             raise CommunicationError("KNX/IP interface not connected")
 
-        return await self._await_from_different_thread(
-            self._interface.send_telegram(telegram), self._thread_loop
-        )
+        return await self._await_from_connection_thread(self._interface.send_cemi(cemi))
 
     async def gateway_info(self) -> GatewayDescriptor | None:
         """Get gateway descriptor from interface."""
         if self._gateway_info is not None:
             return self._gateway_info
         if isinstance(self._interface, _Tunnel):
-            return await self._await_from_different_thread(
-                self._interface.request_description(), self._thread_loop
+            return await self._await_from_connection_thread(
+                self._interface.request_description()
             )
         return None

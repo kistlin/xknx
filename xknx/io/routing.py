@@ -12,22 +12,21 @@ import logging
 import random
 from typing import TYPE_CHECKING, Final
 
-from xknx.core import XknxConnectionState
-from xknx.exceptions import CommunicationError, UnsupportedCEMIMessage
+from xknx.cemi import CEMIFrame, CEMIMessageCode
+from xknx.core import XknxConnectionState, XknxConnectionType
+from xknx.exceptions import CommunicationError
 from xknx.knxip import (
     HPAI,
-    CEMIFrame,
-    CEMIMessageCode,
     KNXIPFrame,
     KNXIPServiceType,
     RoutingBusy,
     RoutingIndication,
     RoutingLostMessage,
 )
-from xknx.telegram import IndividualAddress, Telegram, TelegramDirection
+from xknx.telegram import IndividualAddress
 
 from .const import DEFAULT_INDIVIDUAL_ADDRESS, DEFAULT_MCAST_GRP, DEFAULT_MCAST_PORT
-from .interface import Interface, TelegramCallbackType
+from .interface import CEMICallbackType, Interface
 from .ip_secure import SecureGroup
 from .transport import KNXIPTransport, UDPTransport
 
@@ -35,7 +34,6 @@ if TYPE_CHECKING:
     from xknx.xknx import XKNX
 
 logger = logging.getLogger("xknx.log")
-cemi_logger = logging.getLogger("xknx.cemi")
 
 BUSY_DECREMENT_TIME: Final = 0.005  # 5 ms
 BUSY_INCREMENT_COOLDOWN: Final = 0.01  # 10 ms
@@ -48,7 +46,7 @@ DEFAULT_LATENCY_TOLERANCE_MS: Final = 1000
 
 class _RoutingFlowControl:
     """
-    Class for hanling KNXnet/IP routing flow control.
+    Class for handling KNXnet/IP routing flow control.
 
     See KNX Specifications 3.8.5 Routing §2.3.5 Flow control handling
     """
@@ -134,13 +132,14 @@ class _RoutingFlowControl:
 class Routing(Interface):
     """Class for handling KNXnet/IP multicast communication."""
 
+    connection_type = XknxConnectionType.ROUTING
     transport: UDPTransport
 
     def __init__(
         self,
         xknx: XKNX,
         individual_address: IndividualAddress | None,
-        telegram_received_callback: TelegramCallbackType,
+        cemi_received_callback: CEMICallbackType,
         local_ip: str,
         multicast_group: str = DEFAULT_MCAST_GRP,
         multicast_port: int = DEFAULT_MCAST_PORT,
@@ -148,7 +147,7 @@ class Routing(Interface):
         """Initialize Routing class."""
         self.xknx = xknx
         self.individual_address = individual_address or DEFAULT_INDIVIDUAL_ADDRESS
-        self.telegram_received_callback = telegram_received_callback
+        self.cemi_received_callback = cemi_received_callback
         self.local_ip = local_ip
         self.multicast_group = multicast_group
         self.multicast_port = multicast_port
@@ -182,7 +181,7 @@ class Routing(Interface):
         """Start routing."""
         self.xknx.current_address = self.individual_address
         await self.xknx.connection_manager.connection_state_changed(
-            XknxConnectionState.CONNECTING
+            XknxConnectionState.CONNECTING, self.connection_type
         )
         try:
             await self.transport.connect()
@@ -199,7 +198,7 @@ class Routing(Interface):
             self.transport.stop()
             raise CommunicationError("Routing could not be started") from ex
         await self.xknx.connection_manager.connection_state_changed(
-            XknxConnectionState.CONNECTED
+            XknxConnectionState.CONNECTED, self.connection_type
         )
         return True
 
@@ -217,18 +216,17 @@ class Routing(Interface):
     #
     ##################
 
-    async def send_telegram(self, telegram: Telegram) -> None:
-        """Send Telegram to routing connected device."""
-        cemi = CEMIFrame.init_from_telegram(
-            telegram=telegram,
-            code=CEMIMessageCode.L_DATA_IND,
-            src_addr=self.individual_address,
-        )
-        cemi_logger.debug("Outgoing CEMI: %s", cemi)
+    async def send_cemi(self, cemi: CEMIFrame) -> None:
+        """Send CEMIFrame to the network."""
+        # send L_DATA_IND to network, create L_DATA_CON locally for routing
+        cemi.code = CEMIMessageCode.L_DATA_IND
         routing_indication = RoutingIndication(raw_cemi=cemi.to_knx())
 
         async with self._flow_control.throttle():
             self._send_knxipframe(KNXIPFrame.init_from_body(routing_indication))
+
+        cemi.code = CEMIMessageCode.L_DATA_CON
+        self.cemi_received_callback(cemi.to_knx())
 
     def _send_knxipframe(self, knxipframe: KNXIPFrame) -> None:
         """Send KNXIPFrame to connected routing device."""
@@ -259,39 +257,20 @@ class Routing(Interface):
 
     def _handle_routing_indication(self, routing_indication: RoutingIndication) -> None:
         """Handle incoming RoutingIndication."""
-        cemi = CEMIFrame()
-        try:
-            cemi.from_knx(routing_indication.raw_cemi)
-            cemi_logger.debug("Incoming CEMI: %s", cemi)
-        except UnsupportedCEMIMessage as unsupported_cemi_err:
-            logger.warning("CEMI not supported: %s", unsupported_cemi_err)
-            return
-        if cemi.src_addr == self.individual_address:
-            logger.debug("Ignoring own packet")
-            return
-        # TODO: is cemi message code L_DATA.req or .con valid for routing? if not maybe warn and ignore
-        asyncio.create_task(self.handle_cemi_frame(cemi))
-
-    async def handle_cemi_frame(self, cemi: CEMIFrame) -> None:
-        """Handle incoming telegram and send responses if applicable (device management)."""
-        telegram = cemi.telegram
-        telegram.direction = TelegramDirection.INCOMING
-
-        if response_tgs := await self.telegram_received_callback(telegram):
-            for response in response_tgs:
-                await self.send_telegram(response)
+        self.cemi_received_callback(routing_indication.raw_cemi)
 
 
 class SecureRouting(Routing):
     """Class for handling KNXnet/IP secure multicast communication."""
 
+    connection_type = XknxConnectionType.ROUTING_SECURE
     transport: SecureGroup
 
     def __init__(
         self,
         xknx: XKNX,
         individual_address: IndividualAddress | None,
-        telegram_received_callback: TelegramCallbackType,
+        cemi_received_callback: CEMICallbackType,
         local_ip: str,
         backbone_key: bytes,
         latency_ms: int | None = None,
@@ -304,7 +283,7 @@ class SecureRouting(Routing):
         super().__init__(
             xknx,
             individual_address=individual_address,
-            telegram_received_callback=telegram_received_callback,
+            cemi_received_callback=cemi_received_callback,
             local_ip=local_ip,
             multicast_group=multicast_group,
             multicast_port=multicast_port,

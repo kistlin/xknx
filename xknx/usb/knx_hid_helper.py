@@ -1,7 +1,6 @@
 import logging
 from typing import List, Tuple, Union
 
-from xknx.knxip import CEMIFrame
 from xknx.exceptions import UnsupportedCEMIMessage
 from xknx.telegram import Telegram, TelegramDirection
 from xknx.usb.knx_hid_frame import KNXHIDFrame, KNXHIDFrameData, KNXHIDReportBodyData, PacketInfo, PacketInfoData

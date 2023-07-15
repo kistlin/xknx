@@ -8,6 +8,7 @@ from __future__ import annotations
 from xknx.exceptions import ConversionError
 
 from .dpt import DPTNumeric
+from .payload import DPTArray, DPTBinary
 
 
 class DPT2ByteFloat(DPTNumeric):
@@ -20,7 +21,6 @@ class DPT2ByteFloat(DPTNumeric):
     dpt_main_number = 9
     dpt_sub_number: int | None = None
     value_type = "2byte_float"
-    unit = ""
     payload_length = 2
 
     value_min = -671088.64
@@ -28,9 +28,9 @@ class DPT2ByteFloat(DPTNumeric):
     resolution = 0.01
 
     @classmethod
-    def from_knx(cls, raw: tuple[int, ...]) -> float:
+    def from_knx(cls, payload: DPTArray | DPTBinary) -> float:
         """Parse/deserialize from KNX/IP raw data."""
-        cls.test_bytesarray(raw)
+        raw = cls.validate_payload(payload)
         data = (raw[0] * 256) + raw[1]
         exponent = (data >> 11) & 0x0F
         significand = data & 0x7FF
@@ -47,7 +47,7 @@ class DPT2ByteFloat(DPTNumeric):
         return value
 
     @classmethod
-    def to_knx(cls, value: float) -> tuple[int, int]:
+    def to_knx(cls, value: float) -> DPTArray:
         """Serialize to KNX/IP raw data."""
         try:
             knx_value = float(value)
@@ -56,7 +56,7 @@ class DPT2ByteFloat(DPTNumeric):
 
             value = knx_value * 100
             exponent = 0
-            while value < -2048 or value > 2047:
+            while not -2048 <= value <= 2047:
                 exponent += 1
                 value /= 2
 
@@ -65,7 +65,7 @@ class DPT2ByteFloat(DPTNumeric):
             if value < 0:
                 msb |= 0x80
 
-            return msb, mantisse & 0xFF
+            return DPTArray((msb, mantisse & 0xFF))
         except ValueError:
             raise ConversionError(f"Could not serialize {cls.__name__}", value=value)
 
@@ -133,6 +133,7 @@ class DPTWsp(DPT2ByteFloat):
     dpt_sub_number = 5
     value_type = "wind_speed_ms"
     unit = "m/s"
+    ha_device_class = "wind_speed"
 
     value_min = 0
     value_max = 670760
@@ -173,6 +174,15 @@ class DPTPartsPerMillion(DPT2ByteFloat):
     unit = "ppm"
 
 
+class DPTAirFlow(DPT2ByteFloat):
+    """DPT 9.009 DPT_Value_AirFlow."""
+
+    dpt_main_number = 9
+    dpt_sub_number = 9
+    value_type = "air_flow"
+    unit = "m³/h"
+
+
 class DPTTime1(DPT2ByteFloat):
     """DPT 9.010 DPT_Value_Time1 (s)."""
 
@@ -204,6 +214,7 @@ class DPTVoltage(DPT2ByteFloat):
     dpt_sub_number = 20
     value_type = "voltage"
     unit = "mV"
+    ha_device_class = "voltage"
 
 
 class DPTCurrent(DPT2ByteFloat):
@@ -213,6 +224,7 @@ class DPTCurrent(DPT2ByteFloat):
     dpt_sub_number = 21
     value_type = "curr"
     unit = "mA"
+    ha_device_class = "current"
 
 
 class DPTPowerDensity(DPT2ByteFloat):
@@ -284,9 +296,32 @@ class DPTWspKmh(DPT2ByteFloat):
     dpt_sub_number = 28
     value_type = "wind_speed_kmh"
     unit = "km/h"
+    ha_device_class = "wind_speed"
 
     value_min = 0
     value_max = 670760
+
+
+class DPTAbsoluteHumidity(DPT2ByteFloat):
+    """DPT 9.029 DPT_Value_Absolute_Humidity."""
+
+    dpt_main_number = 9
+    dpt_sub_number = 29
+    value_type = "absolute_humidity"
+    unit = "g/m³"
+
+    value_min = 0
+
+
+class DPTConcentrationUGM3(DPT2ByteFloat):
+    """DPT 9.030 DPT_Value_Concentration_μgm3."""
+
+    dpt_main_number = 9
+    dpt_sub_number = 30
+    value_type = "concentration_ugm3"
+    unit = "μg/m³"
+
+    value_min = 0
 
 
 class DPTEnthalpy(DPT2ByteFloat):

@@ -2,7 +2,7 @@ import logging
 import struct
 from typing import Optional
 
-from xknx.knxip.knxip_enum import CEMIMessageCode
+from xknx.cemi import CEMIMessageCode
 from xknx.usb.knx_hid_datatypes import DataSizeBySequenceNumber, EMIID, ProtocolID, SequenceNumber
 
 

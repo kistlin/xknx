@@ -12,6 +12,7 @@ from typing import cast
 from xknx.exceptions import ConversionError
 
 from .dpt import DPTNumeric
+from .payload import DPTArray, DPTBinary
 
 
 class DPT4ByteFloat(DPTNumeric):
@@ -29,7 +30,6 @@ class DPT4ByteFloat(DPTNumeric):
     dpt_main_number = 14
     dpt_sub_number: int | None = None
     value_type = "4byte_float"
-    unit = ""
     payload_length = 4
 
     value_min = float("-inf")
@@ -37,15 +37,15 @@ class DPT4ByteFloat(DPTNumeric):
     resolution = 0.0000001
 
     @classmethod
-    def from_knx(cls, raw: tuple[int, ...]) -> float:
+    def from_knx(cls, payload: DPTArray | DPTBinary) -> float:
         """Parse/deserialize from KNX/IP raw data (big endian)."""
-        cls.test_bytesarray(raw)
+        raw = cls.validate_payload(payload)
         try:
             raw_float = cast(float, struct.unpack(">f", bytes(raw))[0])
         except struct.error:
             raise ConversionError(f"Could not parse {cls.__name__}", raw=raw)
         try:
-            # round to 7 digit precicion independent of exponent - same value as ETS 5.7 group monitor
+            # round to 7 digit precision independent of exponent - same value as ETS 5.7 group monitor
             return round(raw_float, 7 - ceil(log10(abs(raw_float))))
         except (ValueError, OverflowError):
             # account for 0 and special values
@@ -54,13 +54,13 @@ class DPT4ByteFloat(DPTNumeric):
             return raw_float
 
     @classmethod
-    def to_knx(cls, value: float) -> tuple[int, ...]:
+    def to_knx(cls, value: float) -> DPTArray:
         """Serialize to KNX/IP raw data."""
         try:
             knx_value = float(value)
-            return tuple(struct.pack(">f", knx_value))
+            return DPTArray(struct.pack(">f", knx_value))
         except (ValueError, struct.error):
-            raise ConversionError(f"Could not serialize {cls.__name__}", vlaue=value)
+            raise ConversionError(f"Could not serialize {cls.__name__}", value=value)
 
 
 class DPTAcceleration(DPT4ByteFloat):
@@ -114,7 +114,6 @@ class DPTAmplitude(DPT4ByteFloat):
     dpt_main_number = 14
     dpt_sub_number = 5
     value_type = "amplitude"
-    unit = ""
 
 
 class DPTAngleRad(DPT4ByteFloat):
@@ -241,6 +240,7 @@ class DPTElectricCurrent(DPT4ByteFloat):
     dpt_sub_number = 19
     value_type = "electric_current"
     unit = "A"
+    ha_device_class = "current"
 
 
 class DPTElectricCurrentDensity(DPT4ByteFloat):
@@ -367,6 +367,7 @@ class DPTFrequency(DPT4ByteFloat):
     dpt_sub_number = 33
     value_type = "frequency"
     unit = "Hz"
+    ha_device_class = "frequency"
 
 
 class DPTAngularFrequency(DPT4ByteFloat):
@@ -421,6 +422,7 @@ class DPTLength(DPT4ByteFloat):
     dpt_sub_number = 39
     value_type = "length"
     unit = "m"
+    ha_device_class = "distance"
 
 
 class DPTLightQuantity(DPT4ByteFloat):
@@ -439,7 +441,6 @@ class DPTLuminance(DPT4ByteFloat):
     dpt_sub_number = 41
     value_type = "luminance"
     unit = "cd/m²"
-    ha_device_class = "illuminance"
 
 
 class DPTLuminousFlux(DPT4ByteFloat):
@@ -449,7 +450,6 @@ class DPTLuminousFlux(DPT4ByteFloat):
     dpt_sub_number = 42
     value_type = "luminous_flux"
     unit = "lm"
-    ha_device_class = "illuminance"
 
 
 class DPTLuminousIntensity(DPT4ByteFloat):
@@ -459,7 +459,6 @@ class DPTLuminousIntensity(DPT4ByteFloat):
     dpt_sub_number = 43
     value_type = "luminous_intensity"
     unit = "cd"
-    ha_device_class = "illuminance"
 
 
 class DPTMagneticFieldStrength(DPT4ByteFloat):
@@ -532,6 +531,7 @@ class DPTMass(DPT4ByteFloat):
     dpt_sub_number = 51
     value_type = "mass"
     unit = "kg"
+    ha_device_class = "weight"
 
 
 class DPTMassFlux(DPT4ByteFloat):
@@ -586,7 +586,6 @@ class DPTPowerFactor(DPT4ByteFloat):
     dpt_main_number = 14
     dpt_sub_number = 57
     value_type = "powerfactor"
-    unit = "cosΦ"
     ha_device_class = "power_factor"
 
 
@@ -624,7 +623,7 @@ class DPTResistivity(DPT4ByteFloat):
     dpt_main_number = 14
     dpt_sub_number = 61
     value_type = "resistivity"
-    unit = "Ω m"
+    unit = "Ωm"
 
 
 class DPTSelfInductance(DPT4ByteFloat):
@@ -661,6 +660,7 @@ class DPTSpeed(DPT4ByteFloat):
     dpt_sub_number = 65
     value_type = "speed"
     unit = "m/s"
+    ha_device_class = "speed"
 
 
 class DPTStress(DPT4ByteFloat):
@@ -750,7 +750,7 @@ class DPTTorque(DPT4ByteFloat):
     dpt_main_number = 14
     dpt_sub_number = 75
     value_type = "torque"
-    unit = "N m"
+    unit = "Nm"
 
 
 class DPTVolume(DPT4ByteFloat):
@@ -787,3 +787,13 @@ class DPTWork(DPT4ByteFloat):
     dpt_sub_number = 79
     value_type = "work"
     unit = "J"
+
+
+class DPTApparentPower(DPT4ByteFloat):
+    """DPT 14.080 DPT_Value_Apparent_Power."""
+
+    dpt_main_number = 14
+    dpt_sub_number = 80
+    value_type = "apparent_power"
+    unit = "VA"
+    ha_device_class = "apparent_power"

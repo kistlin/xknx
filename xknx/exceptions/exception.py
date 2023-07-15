@@ -1,6 +1,7 @@
 """Module for XKXN Exceptions."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 
@@ -105,6 +106,19 @@ class IncompleteKNXIPFrame(CouldNotParseKNXIP):
         return f'<IncompleteKNXIPFrame description="{self.description}" />'
 
 
+class CouldNotParseCEMI(XKNXException):
+    """Exception class for wrong CEMI data."""
+
+    def __init__(self, description: str = "") -> None:
+        """Initialize CouldNotParseCEMI class."""
+        super().__init__()
+        self.description = description
+
+    def __str__(self) -> str:
+        """Return object as readable string."""
+        return f'<CouldNotParseCEMI description="{self.description}" />'
+
+
 class UnsupportedCEMIMessage(XKNXException):
     """Exception class for unsupported CEMI Messages."""
 
@@ -166,8 +180,17 @@ class DeviceIllegalValue(XKNXException):
         return f'<DeviceIllegalValue description="{self.value}" value="{self.description}" />'
 
 
+class DataSecureError(XKNXException):
+    """Exception class for KNX Data Secure handling."""
+
+    def __init__(self, message: str, log_level: int = logging.WARNING) -> None:
+        """Instantiate exception."""
+        super().__init__(message)
+        self.log_level = log_level
+
+
 class SecureException(XKNXException):
-    """Exception class for ip secure handling."""
+    """Exception class for IP secure handling."""
 
 
 class InvalidSecureConfiguration(SecureException):

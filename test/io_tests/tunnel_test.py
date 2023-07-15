@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock, call, patch
 import pytest
 
 from xknx import XKNX
+from xknx.cemi import CEMIFrame, CEMILData, CEMIMessageCode
 from xknx.dpt import DPTArray
 from xknx.exceptions import CommunicationError
 from xknx.io import TCPTunnel, UDPTunnel
@@ -13,11 +14,11 @@ from xknx.io.const import CONNECTIONSTATE_REQUEST_TIMEOUT, HEARTBEAT_RATE
 from xknx.io.gateway_scanner import GatewayDescriptor
 from xknx.knxip import (
     HPAI,
-    CEMIFrame,
     ConnectionStateRequest,
     ConnectionStateResponse,
     ConnectRequest,
     ConnectResponse,
+    ConnectResponseData,
     DescriptionRequest,
     DescriptionResponse,
     DisconnectRequest,
@@ -27,8 +28,14 @@ from xknx.knxip import (
     TunnellingAck,
     TunnellingRequest,
 )
-from xknx.knxip.knxip_enum import CEMIMessageCode, HostProtocol
-from xknx.telegram import IndividualAddress, Telegram, TelegramDirection
+from xknx.knxip.knxip_enum import HostProtocol
+from xknx.telegram import (
+    GroupAddress,
+    IndividualAddress,
+    Telegram,
+    TelegramDirection,
+    tpci,
+)
 from xknx.telegram.apci import GroupValueWrite
 
 
@@ -39,14 +46,14 @@ class TestUDPTunnel:
         """Set up test class."""
         # pylint: disable=attribute-defined-outside-init
         self.xknx = XKNX()
-        self.tg_received_mock = AsyncMock()
+        self.cemi_received_mock = Mock()
         self.tunnel = UDPTunnel(
             self.xknx,
             gateway_ip="192.168.1.2",
             gateway_port=3671,
             local_ip="192.168.1.1",
             local_port=0,
-            telegram_received_callback=self.tg_received_mock,
+            cemi_received_callback=self.cemi_received_mock,
             auto_reconnect=False,
             auto_reconnect_wait=3,
             route_back=False,
@@ -61,63 +68,61 @@ class TestUDPTunnel:
             # L_Data.ind T_Connect from 1.0.250 to 1.0.255 (xknx tunnel endpoint)
             # communication_channel_id: 0x02   sequence_counter: 0x21
             bytes.fromhex("0610 0420 0014 04 02 21 00 2900b06010fa10ff0080"),
+            # <UnsupportedCEMIMessage description="CEMI too small. Length: 9; CEMI: 2900b06010fa10ff00" />
+            # communication_channel_id: 0x02   sequence_counter: 0x21
+            bytes.fromhex("0610 0420 0013 04 02 21 00 2900b06010fa10ff00"),
         ],
     )
     @patch("xknx.io.UDPTunnel._send_tunnelling_ack")
     async def test_tunnel_request_received(self, send_ack_mock, raw):
-        """Test Tunnel for calling send_ack on normal frames."""
-        _cemi = CEMIFrame()
-        _cemi.from_knx(raw[10:])
-        telegram = _cemi.telegram
-        telegram.direction = TelegramDirection.INCOMING
+        """Test Tunnel for calling send_ack on frames."""
+        raw_cemi = raw[10:]
         self.tunnel.expected_sequence_number = 0x21
 
         self.tunnel.transport.data_received_callback(raw, ("192.168.1.2", 3671))
         await asyncio.sleep(0)
-        self.tg_received_mock.assert_called_once_with(telegram)
+        self.cemi_received_mock.assert_called_once_with(raw_cemi)
         send_ack_mock.assert_called_once_with(raw[7], raw[8])
 
     @patch("xknx.io.UDPTunnel._send_tunnelling_ack")
-    @patch("xknx.io.UDPTunnel._send_cemi")
+    @patch("xknx.io.UDPTunnel.send_cemi")
     async def test_tunnel_request_received_callback(
         self,
         send_cemi_mock,
         send_ack_mock,
     ):
-        """Test Tunnel for responding to L_DATA.req with confirmation and indication."""
-        # L_Data.req T_Connect from 1.0.250 to 1.0.255 (xknx tunnel endpoint) - ETS Line-Scan
+        """Test Tunnel for responding to point-to-point connection."""
+        self.tunnel.cemi_received_callback = self.xknx.knxip_interface.cemi_received
+        self.xknx.knxip_interface._interface = self.tunnel
+        # set current address so management telegram is processed
+        self.xknx.current_address = IndividualAddress("1.0.255")
+        # L_Data.ind T_Connect from 1.0.250 to 1.0.255 (xknx tunnel endpoint) - ETS Line-Scan
         # communication_channel_id: 0x02   sequence_counter: 0x81
-        raw_req = bytes.fromhex("0610 0420 0014 04 02 81 00 1100b06010fa10ff0080")
+        raw_ind = bytes.fromhex("0610 0420 0014 04 02 81 00 2900b06010fa10ff0080")
 
-        _cemi = CEMIFrame()
-        _cemi.from_knx(raw_req[10:])
-        test_telegram = _cemi.telegram
+        test_cemi = CEMIFrame.from_knx(raw_ind[10:])
+        test_telegram = test_cemi.data.telegram()
         test_telegram.direction = TelegramDirection.INCOMING
         self.tunnel.expected_sequence_number = 0x81
 
-        response_telegram = Telegram(source_address=self.tunnel._src_address)
+        response_telegram = Telegram(
+            destination_address=IndividualAddress(test_telegram.source_address),
+            tpci=tpci.TDisconnect(),
+        )
 
-        async def tg_received_mock(telegram):
-            """Mock for telegram_received_callback."""
-            assert telegram == test_telegram
-            return [response_telegram]
-
-        self.tunnel.telegram_received_callback = tg_received_mock
-        self.tunnel.transport.data_received_callback(raw_req, ("192.168.1.2", 3671))
-
+        self.tunnel.transport.data_received_callback(raw_ind, ("192.168.1.2", 3671))
         await asyncio.sleep(0)
-        confirmation_cemi = _cemi
-        confirmation_cemi.code = CEMIMessageCode.L_DATA_CON
-        response_cemi = CEMIFrame.init_from_telegram(
-            response_telegram,
-            code=CEMIMessageCode.L_DATA_IND,
-            src_addr=self.tunnel._src_address,
+        response_cemi = CEMIFrame(
+            code=CEMIMessageCode.L_DATA_REQ,
+            data=CEMILData.init_from_telegram(
+                response_telegram,
+                src_addr=IndividualAddress("1.0.255"),
+            ),
         )
         assert send_cemi_mock.call_args_list == [
-            call(confirmation_cemi),
             call(response_cemi),
         ]
-        send_ack_mock.assert_called_once_with(raw_req[7], raw_req[8])
+        send_ack_mock.assert_called_once_with(raw_ind[7], raw_ind[8])
 
     async def test_repeated_tunnel_request(self, time_travel):
         """Test Tunnel for receiving repeated TunnellingRequest frames."""
@@ -125,9 +130,13 @@ class TestUDPTunnel:
         self.tunnel.communication_channel = 1
         self.tunnel.expected_sequence_number = 10
 
-        test_telegram = Telegram(payload=GroupValueWrite(DPTArray((1,))))
-        cemi = CEMIFrame.init_from_telegram(
-            test_telegram, code=CEMIMessageCode.L_DATA_IND
+        test_telegram = Telegram(
+            destination_address=GroupAddress(1),
+            payload=GroupValueWrite(DPTArray((1,))),
+        )
+        cemi = CEMIFrame(
+            code=CEMIMessageCode.L_DATA_IND,
+            data=CEMILData.init_from_telegram(test_telegram),
         )
         test_frame = KNXIPFrame.init_from_body(
             TunnellingRequest(
@@ -146,14 +155,14 @@ class TestUDPTunnel:
         assert self.tunnel.transport.send.call_args_list == [call(test_ack, addr=None)]
         self.tunnel.transport.send.reset_mock()
         assert self.tunnel.expected_sequence_number == 11
-        assert self.tg_received_mock.call_count == 1
+        assert self.cemi_received_mock.call_count == 1
         # same sequence number as before - ACK, not processed
         self.tunnel._request_received(test_frame, None, None)
         await time_travel(0)
         assert self.tunnel.transport.send.call_args_list == [call(test_ack, addr=None)]
         self.tunnel.transport.send.reset_mock()
         assert self.tunnel.expected_sequence_number == 11
-        assert self.tg_received_mock.call_count == 1
+        assert self.cemi_received_mock.call_count == 1
         # wrong sequence number - no ACK, not processed
         # reconnect if `auto_reconnect` was True
         with pytest.raises(CommunicationError):
@@ -162,63 +171,7 @@ class TestUDPTunnel:
         assert self.tunnel.transport.send.call_args_list == []
         self.tunnel.transport.send.reset_mock()
         assert self.tunnel.expected_sequence_number == 11
-        assert self.tg_received_mock.call_count == 1
-
-    @patch("xknx.io.UDPTunnel._send_tunnelling_ack")
-    def test_tunnel_request_received_cemi_too_small(self, send_ack_mock):
-        """Test Tunnel sending ACK for unsupported frames."""
-        # <UnsupportedCEMIMessage description="CEMI too small. Length: 9; CEMI: 2900b06010fa10ff00" />
-        # communication_channel_id: 0x02   sequence_counter: 0x81
-        raw = bytes.fromhex("0610 0420 0013 04 02 81 00 2900b06010fa10ff00")
-        self.tunnel.expected_sequence_number = 0x81
-
-        self.tunnel.transport.data_received_callback(raw, ("192.168.1.2", 3671))
-        self.tg_received_mock.assert_not_called()
-        send_ack_mock.assert_called_once_with(0x02, 0x81)
-
-    @patch("xknx.io.UDPTunnel._send_tunnelling_ack")
-    def test_tunnel_request_received_apci_unsupported(self, send_ack_mock):
-        """Test Tunnel sending ACK for unsupported frames."""
-        # LDataInd Unsupported Extended APCI from 0.0.1 to 0/0/0 broadcast
-        # <UnsupportedCEMIMessage description="APCI not supported: 0b1111111000 in CEMI: 2900b0d0000100000103f8" />
-        # communication_channel_id: 0x02   sequence_counter: 0x4f
-        raw = bytes.fromhex("0610 0420 0015 04 02 4f 00 2900b0d0000100000103f8")
-        self.tunnel.expected_sequence_number = 0x4F
-
-        self.tunnel.transport.data_received_callback(raw, ("192.168.1.2", 3671))
-        self.tg_received_mock.assert_not_called()
-        send_ack_mock.assert_called_once_with(0x02, 0x4F)
-
-    async def test_tunnel_send_and_wait_for_l2_confirmation(self, time_travel):
-        """Test tunnel waits for L_DATA.con before sending another L_DATA.req."""
-        self.tunnel.transport.send = Mock()
-        self.tunnel.communication_channel = 1
-        self.tunnel.expected_sequence_number = 23
-
-        test_telegram = Telegram(payload=GroupValueWrite(DPTArray((1,))))
-        cemi = CEMIFrame.init_from_telegram(
-            test_telegram, code=CEMIMessageCode.L_DATA_CON
-        )
-        test_ack = KNXIPFrame.init_from_body(TunnellingAck(sequence_counter=23))
-        confirmation = KNXIPFrame.init_from_body(
-            TunnellingRequest(
-                communication_channel_id=1,
-                sequence_counter=23,
-                raw_cemi=cemi.to_knx(),
-            )
-        )
-        task = asyncio.create_task(self.tunnel.send_telegram(test_telegram))
-        await time_travel(0)
-        self.tunnel.transport.handle_knxipframe(test_ack, HPAI())
-        await time_travel(0)
-        assert not task.done()
-        assert self.tunnel.transport.send.call_count == 1
-        self.tunnel.transport.handle_knxipframe(confirmation, HPAI())
-        await time_travel(0)
-        assert task.done()
-        # one call for the outgoing request and one for the ACK for the confirmation
-        assert self.tunnel.transport.send.call_count == 2
-        await task
+        assert self.cemi_received_mock.call_count == 1
 
     async def test_tunnel_send_retry(self, time_travel):
         """Test tunnel resends the telegram when no ACK was received."""
@@ -227,24 +180,30 @@ class TestUDPTunnel:
         self.tunnel.sequence_number = 23
         self.tunnel.expected_sequence_number = 15
 
-        test_telegram = Telegram(payload=GroupValueWrite(DPTArray((1,))))
-        cemi = CEMIFrame.init_from_telegram(
-            test_telegram,
+        test_telegram = Telegram(
+            destination_address=GroupAddress(1),
+            payload=GroupValueWrite(DPTArray((1,))),
+        )
+        test_cemi = CEMIFrame(
             code=CEMIMessageCode.L_DATA_REQ,
-            src_addr=self.tunnel._src_address,
+            data=CEMILData.init_from_telegram(
+                test_telegram,
+                src_addr=self.tunnel._src_address,
+            ),
         )
         request = KNXIPFrame.init_from_body(
             TunnellingRequest(
                 communication_channel_id=self.tunnel.communication_channel,
                 sequence_counter=self.tunnel.sequence_number,
-                raw_cemi=cemi.to_knx(),
+                raw_cemi=test_cemi.to_knx(),
             )
         )
         test_ack = KNXIPFrame.init_from_body(
             TunnellingAck(sequence_counter=self.tunnel.sequence_number)
         )
-        confirmation_cemi = CEMIFrame.init_from_telegram(
-            test_telegram, code=CEMIMessageCode.L_DATA_CON
+        confirmation_cemi = CEMIFrame(
+            code=CEMIMessageCode.L_DATA_CON,
+            data=CEMILData.init_from_telegram(test_telegram),
         )
         confirmation = KNXIPFrame.init_from_body(
             TunnellingRequest(
@@ -255,7 +214,7 @@ class TestUDPTunnel:
         )
         confirmation_ack = KNXIPFrame.init_from_body(TunnellingAck(sequence_counter=15))
 
-        task = asyncio.create_task(self.tunnel.send_telegram(test_telegram))
+        task = asyncio.create_task(self.tunnel.send_cemi(test_cemi))
         await time_travel(0)
         assert self.tunnel.transport.send.call_args_list == [call(request, addr=None)]
         self.tunnel.transport.send.reset_mock()
@@ -265,19 +224,19 @@ class TestUDPTunnel:
         self.tunnel.transport.send.reset_mock()
         self.tunnel.transport.handle_knxipframe(test_ack, HPAI())
         await time_travel(0)
-        assert not task.done()
+        assert task.done()
+        await task
+        # L_Data.con ACK for UDP tunneling
         self.tunnel.transport.handle_knxipframe(confirmation, HPAI())
         await time_travel(0)
-        assert task.done()
         assert self.tunnel.transport.send.call_args_list == [
             call(confirmation_ack, addr=None)
         ]
         self.tunnel.transport.send.reset_mock()
-        await task
 
         # Test raise after 2 missed ACKs (reconnect if `auto_reconnect` was True)
         with pytest.raises(CommunicationError):
-            task = asyncio.create_task(self.tunnel.send_telegram(test_telegram))
+            task = asyncio.create_task(self.tunnel.send_cemi(test_cemi))
             # no ACKs received, for 2x wait time (with advancing the loop in between)
             await time_travel(1)
             await time_travel(1)
@@ -323,7 +282,7 @@ class TestUDPTunnel:
             ConnectResponse(
                 communication_channel=23,
                 data_endpoint=gateway_data_endpoint,
-                identifier=7,
+                crd=ConnectResponseData(individual_address=IndividualAddress(7)),
             )
         )
         self.tunnel.transport.handle_knxipframe(connect_response_frame, remote_addr)
@@ -333,20 +292,25 @@ class TestUDPTunnel:
 
         # Send - use data endpoint
         self.tunnel.transport.send.reset_mock()
-        test_telegram = Telegram(payload=GroupValueWrite(DPTArray((1,))))
-        cemi = CEMIFrame.init_from_telegram(
-            test_telegram,
+        test_telegram = Telegram(
+            destination_address=GroupAddress(1),
+            payload=GroupValueWrite(DPTArray((1,))),
+        )
+        test_cemi = CEMIFrame(
             code=CEMIMessageCode.L_DATA_REQ,
-            src_addr=IndividualAddress(7),
+            data=CEMILData.init_from_telegram(
+                test_telegram,
+                src_addr=IndividualAddress(7),
+            ),
         )
         test_telegram_frame = KNXIPFrame.init_from_body(
             TunnellingRequest(
                 communication_channel_id=23,
                 sequence_counter=0,
-                raw_cemi=cemi.to_knx(),
+                raw_cemi=test_cemi.to_knx(),
             )
         )
-        asyncio.create_task(self.tunnel.send_telegram(test_telegram))
+        _send_task = asyncio.create_task(self.tunnel.send_cemi(test_cemi))
         await time_travel(0)
         self.tunnel.transport.send.assert_called_once_with(
             test_telegram_frame, addr=data_endpoint_addr
@@ -402,42 +366,15 @@ class TestTCPTunnel:
         """Set up test class."""
         # pylint: disable=attribute-defined-outside-init
         self.xknx = XKNX()
-        self.tg_received_mock = AsyncMock()
+        self.cemi_received_mock = AsyncMock()
         self.tunnel = TCPTunnel(
             self.xknx,
             gateway_ip="192.168.1.2",
             gateway_port=3671,
-            telegram_received_callback=self.tg_received_mock,
+            cemi_received_callback=self.cemi_received_mock,
             auto_reconnect=False,
             auto_reconnect_wait=3,
         )
-
-    async def test_tunnel_send_and_wait_for_l2_confirmation(self, time_travel):
-        """Test tunnel waits for L_DATA.con before sending another L_DATA.req."""
-        self.tunnel.transport.send = Mock()
-        self.tunnel.communication_channel = 1
-
-        test_telegram = Telegram(payload=GroupValueWrite(DPTArray((1,))))
-        cemi = CEMIFrame.init_from_telegram(
-            test_telegram, code=CEMIMessageCode.L_DATA_CON
-        )
-        confirmation = KNXIPFrame.init_from_body(
-            TunnellingRequest(
-                communication_channel_id=1,
-                sequence_counter=23,
-                raw_cemi=cemi.to_knx(),
-            )
-        )
-        task = asyncio.create_task(self.tunnel.send_telegram(test_telegram))
-        await time_travel(0)
-        assert not task.done()
-        assert self.tunnel.transport.send.call_count == 1
-        self.tunnel.transport.handle_knxipframe(confirmation, HPAI())
-        await time_travel(0)
-        assert task.done()
-        # one call for the outgoing request. No Acks for TCP.
-        assert self.tunnel.transport.send.call_count == 1
-        await task
 
     async def test_tunnel_heartbeat(self, time_travel):
         """Test tunnel sends heartbeat frame."""
@@ -460,7 +397,7 @@ class TestTCPTunnel:
             ConnectResponse(
                 communication_channel=23,
                 data_endpoint=HPAI(protocol=HostProtocol.IPV4_TCP),
-                identifier=7,
+                crd=ConnectResponseData(individual_address=IndividualAddress(7)),
             )
         )
         self.tunnel.transport.handle_knxipframe(connect_response_frame, remote_hpai)
@@ -514,7 +451,7 @@ class TestTCPTunnel:
             ConnectResponse(
                 communication_channel=23,
                 data_endpoint=HPAI(protocol=HostProtocol.IPV4_TCP),
-                identifier=7,
+                crd=ConnectResponseData(individual_address=IndividualAddress(7)),
             )
         )
         self.tunnel.transport.handle_knxipframe(connect_response_frame, remote_hpai)
@@ -566,7 +503,7 @@ class TestTCPTunnel:
             ConnectResponse(
                 communication_channel=23,
                 data_endpoint=HPAI(protocol=HostProtocol.IPV4_TCP),
-                identifier=7,
+                crd=ConnectResponseData(individual_address=IndividualAddress(7)),
             )
         )
         self.tunnel.transport.handle_knxipframe(connect_response_frame, remote_hpai)
