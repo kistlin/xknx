@@ -6,12 +6,40 @@ nav_order: 2
 
 # Changelog
 
-# Unreleased changes
+# 2.11.1 DateTime fix 2023-06-26
+
+### Bugfixes
+
+- Fix processing custom time data in DateTime devices.
+
+# 2.11.0 DateTime state 2023-06-25
+
+### Devices
+
+- Add group_address_state, respond_to_read and sync_state arguments to DateTime devices.
+- Add DPT 9 support for Light color temperature.
 
 ### Internals
 
-- Replace `asyncio.wait_for` with `asyncio.timeout`. For Python <3.11 a backport package is used.
+- Remove pydocstyle and flake8 plugins, add pytest-icdiff to testing requirements.
+
+# 2.10.0 Tunnelling Feature 2023-05-08
+
+### Protocol
+
+- Support Tunnelling Feature service messages.
+
+# 2.9.0 Spring cleanup 2023-04-22
+
+### Dependencies
+
+- For Python <3.11 dependency `async_timeout` is added as backport for `asyncio.timeout`.
+
+### Internals
+
+- Replace `asyncio.wait_for` with `asyncio.timeout`.
 - Add Ruff to pre-commit and tox.
+- Use pyproject.toml for specifying project metadata.
 
 # 2.8.0 Hostnames 2023-04-12
 

@@ -1,19 +1,19 @@
 ---
 repos:
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.2
+    rev: v2.2.5
     hooks:
       - id: codespell
         additional_dependencies:
           - tomli
         exclude_types: [csv, json]
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.3.1
+    rev: v3.7.0
     hooks:
       - id: pyupgrade
         args: [--py39-plus]
   - repo: https://github.com/psf/black
-    rev: 23.1.0
+    rev: 23.3.0
     hooks:
       - id: black
         args:
@@ -24,10 +24,6 @@ repos:
     rev: 6.0.0
     hooks:
       - id: flake8
-        additional_dependencies:
-          - flake8-docstrings==1.6.0
-          - flake8-print==5.0.0
-          - pydocstyle==6.3.0
         files: ^(xknx|examples|docs)/.+\.py$
   - repo: https://github.com/PyCQA/isort
     rev: 5.12.0
@@ -37,7 +33,7 @@ repos:
           - --resolve-all-configs
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     # Ruff version.
-    rev: 'v0.0.261'
+    rev: 'v0.0.275'
     hooks:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
