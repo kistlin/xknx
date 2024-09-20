@@ -1,7 +1,6 @@
 """Module for handling values on the KNX bus."""
-# flake8: noqa
+
 from .remote_value import GroupAddressesType, RemoteValue
-from .remote_value_1count import RemoteValue1Count
 from .remote_value_climate_mode import (
     RemoteValueBinaryHeatCool,
     RemoteValueBinaryOperationMode,
@@ -11,8 +10,7 @@ from .remote_value_climate_mode import (
 from .remote_value_color_rgb import RemoteValueColorRGB
 from .remote_value_color_rgbw import RemoteValueColorRGBW
 from .remote_value_color_xyy import RemoteValueColorXYY
-from .remote_value_control import RemoteValueControl
-from .remote_value_datetime import RemoteValueDateTime
+from .remote_value_datetime import RemoteValueDate, RemoteValueDateTime, RemoteValueTime
 from .remote_value_dpt_value_1_ucount import RemoteValueDptValue1Ucount
 from .remote_value_raw import RemoteValueRaw
 from .remote_value_scaling import RemoteValueScaling
@@ -31,15 +29,15 @@ from .remote_value_updown import RemoteValueUpDown
 __all__ = [
     "GroupAddressesType",
     "RemoteValue",
-    "RemoteValue1Count",
     "RemoteValueBinaryHeatCool",
     "RemoteValueBinaryOperationMode",
     "RemoteValueColorRGB",
     "RemoteValueColorRGBW",
     "RemoteValueColorXYY",
-    "RemoteValueControl",
     "RemoteValueControllerMode",
     "RemoteValueDateTime",
+    "RemoteValueDate",
+    "RemoteValueTime",
     "RemoteValueDptValue1Ucount",
     "RemoteValueNumeric",
     "RemoteValueOperationMode",

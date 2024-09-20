@@ -1,5 +1,6 @@
 async-timeout==4.0.2;python_version<"3.11"
-cryptography==41.0.2
+typing_extensions; python_version<"3.11"
+cryptography==43.0.1
 ifaddr==0.2.0
 hidapi==0.13.1
 pyusb==1.2.1

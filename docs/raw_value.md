@@ -21,7 +21,7 @@ RawValue devices send uint values to the KNX bus. Received values update the dev
 - `respond_to_read` if `True` GroupValueRead requests to the `group_address` are answered. Defaults to `False`
 - `sync_state` defines if and how often the value should be actively read from the bus. If `False` no GroupValueRead telegrams will be sent to its group address. Defaults to `True`
 - `always_callback` defines if a callback shall be triggered for consecutive GroupValueWrite telegrams with same payload. Defaults to `False`
-- `device_updated_cb` awaitable callback for each update.
+- `device_updated_cb` Callback for each update.
 
 ## [](#header-2)Example
 
@@ -33,6 +33,7 @@ value = RawValue(
     group_address='6/2/1',
     respond_to_read=True,
 )
+xknx.devices.async_add(value)
 
 # Set a value without sending to the bus
 value.remote_value.value = 23.0

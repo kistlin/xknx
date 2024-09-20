@@ -1,10 +1,12 @@
 """Unit test for Light objects."""
-from unittest.mock import AsyncMock, patch
+
+from unittest.mock import Mock, patch
 
 from xknx import XKNX
 from xknx.devices import Light
 from xknx.devices.light import ColorTemperatureType
 from xknx.dpt import DPTArray, DPTBinary
+from xknx.dpt.dpt_242 import XYYColor
 from xknx.telegram import GroupAddress, Telegram
 from xknx.telegram.apci import GroupValueRead, GroupValueWrite
 
@@ -322,8 +324,8 @@ class TestLight:
                 destination_address=GroupAddress("1/2/8"), payload=GroupValueRead()
             ),
         ]
-        assert len(set(telegrams)) == expected_telegrams
-        assert set(telegrams) == set(test_telegrams)
+        for test_telegram in test_telegrams:
+            assert test_telegram in telegrams
 
     async def test_sync_individual_color(self):
         """Test sync function / sending group reads to KNX bus. Testing with a Light without dimm functionality."""
@@ -388,8 +390,8 @@ class TestLight:
                 payload=GroupValueRead(),
             ),
         ]
-        assert len(set(telegrams)) == 8
-        assert set(telegrams) == set(test_telegrams)
+        for test_telegram in test_telegrams:
+            assert test_telegram in telegrams
 
     #
     # TEST SET ON
@@ -461,11 +463,11 @@ class TestLight:
                 payload=GroupValueWrite(DPTBinary(True)),
             ),
         ]
-        assert len(set(telegrams)) == 4
-        assert set(telegrams) == set(test_telegrams)
+        for test_telegram in test_telegrams:
+            assert test_telegram in telegrams
 
         for telegram in telegrams:
-            await light.process(telegram)
+            light.process(telegram)
 
         assert light.state is True
         for color in light._iter_individual_colors():
@@ -513,11 +515,11 @@ class TestLight:
                 payload=GroupValueWrite(DPTArray((0xFF,))),
             ),
         ]
-        assert len(set(telegrams)) == 4
-        assert set(telegrams) == set(test_telegrams)
+        for test_telegram in test_telegrams:
+            assert test_telegram in telegrams
 
         for telegram in telegrams:
-            await light.process(telegram)
+            light.process(telegram)
 
         assert light.state is True
         for color in light._iter_individual_colors():
@@ -543,7 +545,7 @@ class TestLight:
             payload=GroupValueWrite(DPTBinary(0)),
         )
 
-        await light.process(telegram)
+        light.process(telegram)
         assert light.state is False
 
     async def test_set_off_individual_color(self):
@@ -592,11 +594,11 @@ class TestLight:
                 payload=GroupValueWrite(DPTBinary(False)),
             ),
         ]
-        assert len(set(telegrams)) == 4
-        assert set(telegrams) == set(test_telegrams)
+        for test_telegram in test_telegrams:
+            assert test_telegram in telegrams
 
         for telegram in telegrams:
-            await light.process(telegram)
+            light.process(telegram)
         assert light.state is False
         for color in light._iter_individual_colors():
             assert color.is_on is False
@@ -639,11 +641,11 @@ class TestLight:
                 payload=GroupValueWrite(DPTArray((0,))),
             ),
         ]
-        assert len(set(telegrams)) == 4
-        assert set(telegrams) == set(test_telegrams)
+        for test_telegram in test_telegrams:
+            assert test_telegram in telegrams
 
         for telegram in telegrams:
-            await light.process(telegram)
+            light.process(telegram)
         assert light.state is False
         for color in light._iter_individual_colors():
             assert color.is_on is False
@@ -672,6 +674,8 @@ class TestLight:
         """Test setting the brightness of a non dimmable Light."""
         xknx = XKNX()
         light = Light(xknx, name="TestLight", group_address_switch="1/2/3")
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
             await light.set_brightness(23)
             assert xknx.telegrams.qsize() == 0
@@ -737,6 +741,8 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_color="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         await light.set_color((23, 24, 25))
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
@@ -744,13 +750,15 @@ class TestLight:
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray((23, 24, 25))),
         )
-        await xknx.devices.process(telegram)
+        xknx.devices.process(telegram)
         assert light.current_color == ((23, 24, 25), None)
 
     async def test_set_color_not_possible(self):
         """Test setting the color of a non light without color."""
         xknx = XKNX()
         light = Light(xknx, name="TestLight", group_address_switch="1/2/3")
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
             await light.set_color((23, 24, 25))
             assert xknx.telegrams.qsize() == 0
@@ -777,6 +785,8 @@ class TestLight:
             group_address_brightness_blue="1/1/11",
             group_address_brightness_blue_state="1/1/12",
         )
+        xknx.devices.async_add(light)
+
         await light.set_color([23, 24, 25])
         assert xknx.telegrams.qsize() == 3
         telegrams = [xknx.telegrams.get_nowait() for _ in range(3)]
@@ -795,23 +805,22 @@ class TestLight:
                 payload=GroupValueWrite(DPTArray(25)),
             ),
         ]
+        for test_telegram in test_telegrams:
+            assert test_telegram in telegrams
 
-        assert len(set(telegrams)) == 3
-        assert set(telegrams) == set(test_telegrams)
-
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/4"),
                 payload=GroupValueWrite(DPTArray(23)),
             )
         )
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/8"),
                 payload=GroupValueWrite(DPTArray(24)),
             )
         )
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/12"),
                 payload=GroupValueWrite(DPTArray(25)),
@@ -827,6 +836,8 @@ class TestLight:
             "TestLight",
             group_address_switch_red="1/1/1",
         )
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
             await light.set_color((23, 24, 25))
             assert xknx.telegrams.qsize() == 0
@@ -847,6 +858,8 @@ class TestLight:
             group_address_color="1/2/4",
             group_address_rgbw="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         await light.set_color((23, 24, 25), 26)
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
@@ -854,7 +867,7 @@ class TestLight:
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray((23, 24, 25, 26, 0, 15))),
         )
-        await xknx.devices.process(telegram)
+        xknx.devices.process(telegram)
         assert light.current_color == ((23, 24, 25), 26)
 
     async def test_set_color_rgbw_not_possible(self):
@@ -866,6 +879,8 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_color="1/2/4",
         )
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
             await light.set_color((23, 24, 25), 26)
 
@@ -897,6 +912,8 @@ class TestLight:
             group_address_brightness_white="1/1/15",
             group_address_brightness_white_state="1/1/16",
         )
+        xknx.devices.async_add(light)
+
         await light.set_color([23, 24, 25], white=26)
         assert xknx.telegrams.qsize() == 4
         telegrams = [xknx.telegrams.get_nowait() for _ in range(4)]
@@ -919,29 +936,28 @@ class TestLight:
                 payload=GroupValueWrite(DPTArray(26)),
             ),
         ]
+        for test_telegram in test_telegrams:
+            assert test_telegram in telegrams
 
-        assert len(set(telegrams)) == 4
-        assert set(telegrams) == set(test_telegrams)
-
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/4"),
                 payload=GroupValueWrite(DPTArray(23)),
             )
         )
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/8"),
                 payload=GroupValueWrite(DPTArray(24)),
             )
         )
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/12"),
                 payload=GroupValueWrite(DPTArray(25)),
             )
         )
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/16"),
                 payload=GroupValueWrite(DPTArray(26)),
@@ -968,6 +984,8 @@ class TestLight:
             group_address_brightness_blue="1/1/11",
             group_address_brightness_blue_state="1/1/12",
         )
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
             await light.set_color((23, 24, 25), 26)
 
@@ -989,6 +1007,8 @@ class TestLight:
             group_address_hue="1/2/4",
             group_address_saturation="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         await light.set_hs_color((359, 99))
         assert xknx.telegrams.qsize() == 2
 
@@ -997,14 +1017,14 @@ class TestLight:
             destination_address=GroupAddress("1/2/4"),
             payload=GroupValueWrite(DPTArray((0xFE,))),
         )
-        await xknx.devices.process(telegram)
+        xknx.devices.process(telegram)
 
         telegram = xknx.telegrams.get_nowait()
         assert telegram == Telegram(
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray((0xFC,))),
         )
-        await xknx.devices.process(telegram)
+        xknx.devices.process(telegram)
 
         assert light.current_hs_color == (359, 99)
 
@@ -1016,7 +1036,7 @@ class TestLight:
             destination_address=GroupAddress("1/2/4"),
             payload=GroupValueWrite(DPTArray((0x0D,))),
         )
-        await xknx.devices.process(telegram)
+        xknx.devices.process(telegram)
 
         await light.set_hs_color((18, 3))
         assert xknx.telegrams.qsize() == 1
@@ -1025,7 +1045,7 @@ class TestLight:
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray((0x08,))),
         )
-        await xknx.devices.process(telegram)
+        xknx.devices.process(telegram)
 
         # call set_hs_color with current color shall trigger both values
         await light.set_hs_color((18, 3))
@@ -1036,14 +1056,14 @@ class TestLight:
             destination_address=GroupAddress("1/2/4"),
             payload=GroupValueWrite(DPTArray((0x0D,))),
         )
-        await xknx.devices.process(telegram)
+        xknx.devices.process(telegram)
 
         telegram = xknx.telegrams.get_nowait()
         assert telegram == Telegram(
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray((0x08,))),
         )
-        await xknx.devices.process(telegram)
+        xknx.devices.process(telegram)
 
     async def test_set_hs_color_not_possible(self):
         """Test setting HS value of a light not supporting it."""
@@ -1054,6 +1074,8 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_color="1/2/4",
         )
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
             await light.set_hs_color((22, 25))
 
@@ -1074,15 +1096,17 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_xyy_color="1/2/4",
         )
-        await light.set_xyy_color(((0.52, 0.31), 25))
+        xknx.devices.async_add(light)
+
+        await light.set_xyy_color(XYYColor((0.52, 0.31), 25))
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
         assert telegram == Telegram(
             destination_address=GroupAddress("1/2/4"),
             payload=GroupValueWrite(DPTArray((0x85, 0x1E, 0x4F, 0x5C, 0x19, 0x03))),
         )
-        await xknx.devices.process(telegram)
-        assert light.current_xyy_color == ((0.52, 0.31), 25)
+        xknx.devices.process(telegram)
+        assert light.current_xyy_color == XYYColor((0.52, 0.31), 25)
 
     async def test_set_xyy_color_not_possible(self):
         """Test setting XYY value of a light not supporting it."""
@@ -1093,8 +1117,10 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_color="1/2/4",
         )
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
-            await light.set_xyy_color(((0.5, 0.3), 25))
+            await light.set_xyy_color(XYYColor((0.5, 0.3), 25))
 
             assert xknx.telegrams.qsize() == 0
             mock_warn.assert_called_with(
@@ -1113,6 +1139,8 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_tunable_white="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         await light.set_tunable_white(23)
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
@@ -1125,6 +1153,8 @@ class TestLight:
         """Test setting the tunable white value of a non tw Light."""
         xknx = XKNX()
         light = Light(xknx, name="TestLight", group_address_switch="1/2/3")
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
             await light.set_tunable_white(23)
             assert xknx.telegrams.qsize() == 0
@@ -1144,6 +1174,8 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_color_temperature="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         await light.set_color_temperature(4000)
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
@@ -1169,6 +1201,8 @@ class TestLight:
             group_address_color_temperature="1/2/5",
             color_temperature_type=ColorTemperatureType.FLOAT_2_BYTE,
         )
+        xknx.devices.async_add(light)
+
         await light.set_color_temperature(4000)
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
@@ -1188,6 +1222,8 @@ class TestLight:
         """Test setting the color temperature value of an unsupported Light."""
         xknx = XKNX()
         light = Light(xknx, name="TestLight", group_address_switch="1/2/3")
+        xknx.devices.async_add(light)
+
         with patch("logging.Logger.warning") as mock_warn:
             await light.set_color_temperature(4000)
             assert xknx.telegrams.qsize() == 0
@@ -1207,20 +1243,22 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_brightness="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         assert light.state is None
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTBinary(1)),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.state is True
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTBinary(0)),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.state is False
 
     async def test_process_color_switch(self):
@@ -1242,20 +1280,22 @@ class TestLight:
             group_address_brightness_blue="1/1/11",
             group_address_brightness_blue_state="1/1/12",
         )
+        xknx.devices.async_add(light)
+
         assert light.state is None
 
         telegram = Telegram(
             destination_address=GroupAddress("1/1/2"),
             payload=GroupValueWrite(DPTBinary(True)),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.state is True
 
         telegram = Telegram(
             destination_address=GroupAddress("1/1/2"),
             payload=GroupValueWrite(DPTBinary(False)),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.state is False
 
     async def test_process_switch_callback(self):
@@ -1268,14 +1308,16 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_brightness="1/2/5",
         )
-        after_update_callback = AsyncMock()
+        xknx.devices.async_add(light)
+
+        after_update_callback = Mock()
         light.register_device_updated_cb(after_update_callback)
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTBinary(1)),
         )
-        await light.process(telegram)
+        light.process(telegram)
         after_update_callback.assert_called_with(light)
 
     async def test_process_dimm(self):
@@ -1287,19 +1329,21 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_brightness="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         assert light.current_brightness is None
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray(23)),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.current_brightness == 23
 
     async def test_process_dimm_wrong_payload(self):
         """Test process wrong telegrams. (wrong payload type)."""
         xknx = XKNX()
-        cb_mock = AsyncMock()
+        cb_mock = Mock()
         light = Light(
             xknx,
             name="TestLight",
@@ -1307,19 +1351,21 @@ class TestLight:
             group_address_brightness="1/2/5",
             device_updated_cb=cb_mock,
         )
+        xknx.devices.async_add(light)
+
         telegram = Telegram(
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTBinary(1)),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await light.process(telegram)
+            light.process(telegram)
             log_mock.assert_called_once()
             cb_mock.assert_not_called()
 
     async def test_process_dimm_payload_invalid_length(self):
         """Test process wrong telegrams. (wrong payload length)."""
         xknx = XKNX()
-        cb_mock = AsyncMock()
+        cb_mock = Mock()
         light = Light(
             xknx,
             name="TestLight",
@@ -1327,12 +1373,14 @@ class TestLight:
             group_address_brightness="1/2/5",
             device_updated_cb=cb_mock,
         )
+        xknx.devices.async_add(light)
+
         telegram = Telegram(
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray((23, 24))),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await light.process(telegram)
+            light.process(telegram)
             log_mock.assert_called_once()
             cb_mock.assert_not_called()
 
@@ -1345,12 +1393,14 @@ class TestLight:
             group_address_switch="1/2/3",
             group_address_color="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         assert light.current_color == (None, None)
         telegram = Telegram(
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray((23, 24, 25))),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.current_color == ((23, 24, 25), None)
 
     async def test_process_individual_color(self):
@@ -1372,6 +1422,8 @@ class TestLight:
             group_address_brightness_blue="1/1/11",
             group_address_brightness_blue_state="1/1/12",
         )
+        xknx.devices.async_add(light)
+
         assert light.current_color == (None, None)
 
         telegrams = [
@@ -1390,7 +1442,7 @@ class TestLight:
         ]
 
         for telegram in telegrams:
-            await light.process(telegram)
+            light.process(telegram)
         assert light.current_color == ((42, 43, 44), None)
 
     async def test_process_color_rgbw(self):
@@ -1403,12 +1455,14 @@ class TestLight:
             group_address_color="1/2/4",
             group_address_rgbw="1/2/5",
         )
+        xknx.devices.async_add(light)
+
         assert light.current_color == (None, None)
         telegram = Telegram(
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray((23, 24, 25, 26, 0, 15))),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.current_color == ((23, 24, 25), 26)
 
     async def test_process_individual_color_rgbw(self):
@@ -1434,19 +1488,21 @@ class TestLight:
             group_address_brightness_white="1/1/15",
             group_address_brightness_white_state="1/1/16",
         )
+        xknx.devices.async_add(light)
+
         assert light.current_color == (None, None)
         telegram = Telegram(
             destination_address=GroupAddress("1/1/16"),
             payload=GroupValueWrite(DPTArray(42)),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.current_color == (None, 42)
 
     async def test_process_individual_color_debouncer(self, time_travel):
         """Test the debouncer for individual color lights."""
         xknx = XKNX()
-        rgb_callback = AsyncMock()
-        rgbw_callback = AsyncMock()
+        rgb_callback = Mock()
+        rgbw_callback = Mock()
 
         rgb_light = Light(
             xknx,
@@ -1465,6 +1521,7 @@ class TestLight:
             group_address_brightness_blue_state="1/1/12",
             device_updated_cb=rgb_callback,
         )
+        xknx.devices.async_add(rgb_light)
         rgbw_light = Light(
             xknx,
             "TestRGBWLight",
@@ -1479,6 +1536,7 @@ class TestLight:
             group_address_brightness_white_state="1/1/16",
             device_updated_cb=rgbw_callback,
         )
+        xknx.devices.async_add(rgbw_light)
 
         assert rgb_light.current_color == (None, None)
         assert rgbw_light.current_color == (None, None)
@@ -1500,16 +1558,16 @@ class TestLight:
             payload=GroupValueWrite(DPTArray(50)),
         )
 
-        await xknx.devices.process(red)
+        xknx.devices.process(red)
         rgb_callback.assert_not_called()
         rgbw_callback.assert_not_called()
-        await xknx.devices.process(green)
+        xknx.devices.process(green)
         rgb_callback.assert_not_called()
         rgbw_callback.assert_not_called()
-        await xknx.devices.process(blue)
+        xknx.devices.process(blue)
         rgb_callback.assert_called_once()
         rgbw_callback.assert_not_called()
-        await xknx.devices.process(white)
+        xknx.devices.process(white)
         rgbw_callback.assert_called_once()
 
         assert rgb_light.current_color == ((42, 43, 44), None)
@@ -1518,10 +1576,10 @@ class TestLight:
         rgb_callback.reset_mock()
         rgbw_callback.reset_mock()
         # second time with only 2 telegrams
-        await xknx.devices.process(red)
+        xknx.devices.process(red)
         rgb_callback.assert_not_called()
         rgbw_callback.assert_not_called()
-        await xknx.devices.process(green)
+        xknx.devices.process(green)
         rgb_callback.assert_not_called()
         rgbw_callback.assert_not_called()
         await time_travel(Light.DEBOUNCE_TIMEOUT / 2)
@@ -1548,7 +1606,7 @@ class TestLight:
         )
         assert light.current_hs_color is None
         # initialize hue
-        await light.process(
+        light.process(
             Telegram(
                 destination_address=GroupAddress("1/4/4"),
                 payload=GroupValueWrite(DPTArray((0x2E,))),
@@ -1556,7 +1614,7 @@ class TestLight:
         )
         assert light.current_hs_color is None
         # initialize saturation
-        await light.process(
+        light.process(
             Telegram(
                 destination_address=GroupAddress("1/4/5"),
                 payload=GroupValueWrite(DPTArray((0x55,))),
@@ -1575,45 +1633,45 @@ class TestLight:
         )
         assert light.current_xyy_color is None
         # initial with invalid brightness
-        await light.process(
+        light.process(
             Telegram(
                 destination_address=GroupAddress("1/2/5"),
                 payload=GroupValueWrite(DPTArray((0x2E, 0x14, 0x40, 0x00, 0x55, 0x02))),
             )
         )
-        assert light.current_xyy_color == ((0.18, 0.25), None)
+        assert light.current_xyy_color == XYYColor((0.18, 0.25), None)
         # add valid brightness
-        await light.process(
+        light.process(
             Telegram(
                 destination_address=GroupAddress("1/2/5"),
                 payload=GroupValueWrite(DPTArray((0x2E, 0x14, 0x40, 0x00, 0x55, 0x03))),
             )
         )
-        assert light.current_xyy_color == ((0.18, 0.25), 85)
+        assert light.current_xyy_color == XYYColor((0.18, 0.25), 85)
         # invalid color
-        await light.process(
+        light.process(
             Telegram(
                 destination_address=GroupAddress("1/2/5"),
                 payload=GroupValueWrite(DPTArray((0xD1, 0xEB, 0xB0, 0xA3, 0xA5, 0x01))),
             )
         )
-        assert light.current_xyy_color == ((0.18, 0.25), 165)
+        assert light.current_xyy_color == XYYColor((0.18, 0.25), 165)
         # both valid
-        await light.process(
+        light.process(
             Telegram(
                 destination_address=GroupAddress("1/2/5"),
                 payload=GroupValueWrite(DPTArray((0xD1, 0xEB, 0xB0, 0xA3, 0xA5, 0x03))),
             )
         )
-        assert light.current_xyy_color == ((0.82, 0.69), 165)
+        assert light.current_xyy_color == XYYColor((0.82, 0.69), 165)
         # invalid brightness
-        await light.process(
+        light.process(
             Telegram(
                 destination_address=GroupAddress("1/2/5"),
                 payload=GroupValueWrite(DPTArray((0x2E, 0x14, 0x40, 0x00, 0x00, 0x02))),
             )
         )
-        assert light.current_xyy_color == ((0.18, 0.25), 165)
+        assert light.current_xyy_color == XYYColor((0.18, 0.25), 165)
 
     async def test_process_tunable_white(self):
         """Test process / reading telegrams from telegram queue. Test if tunable white is processed."""
@@ -1630,13 +1688,13 @@ class TestLight:
             destination_address=GroupAddress("1/2/5"),
             payload=GroupValueWrite(DPTArray(23)),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.current_tunable_white == 23
 
     async def test_process_tunable_white_wrong_payload(self):
         """Test process wrong telegrams. (wrong payload type)."""
         xknx = XKNX()
-        cb_mock = AsyncMock()
+        cb_mock = Mock()
         light = Light(
             xknx,
             name="TestLight",
@@ -1649,14 +1707,14 @@ class TestLight:
             payload=GroupValueWrite(DPTBinary(1)),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await light.process(telegram)
+            light.process(telegram)
             log_mock.assert_called_once()
             cb_mock.assert_not_called()
 
     async def test_process_tunable_white_payload_invalid_length(self):
         """Test process wrong telegrams. (wrong payload length)."""
         xknx = XKNX()
-        cb_mock = AsyncMock()
+        cb_mock = Mock()
         light = Light(
             xknx,
             name="TestLight",
@@ -1669,7 +1727,7 @@ class TestLight:
             payload=GroupValueWrite(DPTArray((23, 24))),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await light.process(telegram)
+            light.process(telegram)
             log_mock.assert_called_once()
             cb_mock.assert_not_called()
 
@@ -1695,13 +1753,13 @@ class TestLight:
                 )
             ),
         )
-        await light.process(telegram)
+        light.process(telegram)
         assert light.current_color_temperature == 4000
 
     async def test_process_color_temperature_wrong_payload(self):
         """Test process wrong telegrams. (wrong payload type)."""
         xknx = XKNX()
-        cb_mock = AsyncMock()
+        cb_mock = Mock()
         light = Light(
             xknx,
             name="TestLight",
@@ -1714,14 +1772,14 @@ class TestLight:
             payload=GroupValueWrite(DPTBinary(1)),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await light.process(telegram)
+            light.process(telegram)
             log_mock.assert_called_once()
             cb_mock.assert_not_called()
 
     async def test_process_color_temperature_payload_invalid_length(self):
         """Test process wrong telegrams. (wrong payload length)."""
         xknx = XKNX()
-        cb_mock = AsyncMock()
+        cb_mock = Mock()
         light = Light(
             xknx,
             name="TestLight",
@@ -1734,7 +1792,7 @@ class TestLight:
             payload=GroupValueWrite(DPTArray(23)),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await light.process(telegram)
+            light.process(telegram)
             log_mock.assert_called_once()
             cb_mock.assert_not_called()
 

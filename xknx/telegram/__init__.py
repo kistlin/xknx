@@ -5,10 +5,11 @@ Module for handling KNX primitives.
 * KNX Telegrams
 
 """
-# flake8: noqa
+
+# ruff: noqa: F401
 from .address import GroupAddress, GroupAddressType, IndividualAddress
 from .address_filter import AddressFilter
-from .telegram import Telegram, TelegramDirection
+from .telegram import Telegram, TelegramDecodedData, TelegramDirection
 
 __all__ = [
     "AddressFilter",
@@ -17,4 +18,5 @@ __all__ = [
     "IndividualAddress",
     "Telegram",
     "TelegramDirection",
+    "TelegramDecodedData",
 ]

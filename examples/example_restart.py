@@ -1,4 +1,5 @@
 """Example on how to connect to restart a KNX device."""
+
 import asyncio
 import sys
 
@@ -7,7 +8,7 @@ from xknx.management.procedures import dm_restart
 from xknx.telegram import IndividualAddress
 
 
-async def main(argv: list[str]):
+async def main(argv: list[str]) -> int:
     """Restart a KNX device."""
     if len(argv) != 2:
         print(f"{argv[0]}: missing target address.")
@@ -17,6 +18,7 @@ async def main(argv: list[str]):
 
     async with XKNX() as xknx:
         await dm_restart(xknx, address)
+    return 0
 
 
 if __name__ == "__main__":

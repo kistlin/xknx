@@ -1,5 +1,6 @@
 """Unit test for RawValue objects."""
-from unittest.mock import AsyncMock
+
+from unittest.mock import Mock
 
 import pytest
 
@@ -67,7 +68,7 @@ class TestRawValue:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(value=raw_payload),
         )
-        await raw_value.process(telegram)
+        raw_value.process(telegram)
         assert raw_value.resolve_state() == expected_state
         assert raw_value.last_telegram == telegram
 
@@ -108,11 +109,11 @@ class TestRawValue:
             destination_address=GroupAddress("1/1/1"), payload=GroupValueRead()
         )
         # verify no response when respond is False
-        await non_responding.process(read_telegram)
+        non_responding.process(read_telegram)
         assert xknx.telegrams.qsize() == 0
 
         # verify response when respond is True
-        await responding.process(read_telegram)
+        responding.process(read_telegram)
         assert xknx.telegrams.qsize() == 1
         response = xknx.telegrams.get_nowait()
         assert response == Telegram(
@@ -120,19 +121,19 @@ class TestRawValue:
             payload=GroupValueResponse(DPTArray((0x01, 0x00))),
         )
         # verify no response when GroupValueRead request is not for group_address
-        await responding_multiple.process(read_telegram)
+        responding_multiple.process(read_telegram)
         assert xknx.telegrams.qsize() == 1
         response = xknx.telegrams.get_nowait()
         assert response == Telegram(
             destination_address=GroupAddress("1/1/1"),
             payload=GroupValueResponse(DPTArray((0x01, 0x00))),
         )
-        await responding_multiple.process(
+        responding_multiple.process(
             Telegram(
                 destination_address=GroupAddress("2/2/2"), payload=GroupValueRead()
             )
         )
-        await responding_multiple.process(
+        responding_multiple.process(
             Telegram(
                 destination_address=GroupAddress("3/3/3"), payload=GroupValueRead()
             )
@@ -153,19 +154,19 @@ class TestRawValue:
             2,
             group_address="1/2/3",
         )
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         sensor.register_device_updated_cb(after_update_callback)
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray((0x01, 0x02))),
         )
-        await sensor.process(telegram)
+        sensor.process(telegram)
         after_update_callback.assert_called_with(sensor)
         assert sensor.last_telegram == telegram
         # consecutive telegrams with same payload shall only trigger one callback
         after_update_callback.reset_mock()
-        await sensor.process(telegram)
+        sensor.process(telegram)
         after_update_callback.assert_not_called()
 
     async def test_process_callback_always(self):
@@ -179,19 +180,19 @@ class TestRawValue:
             group_address="1/2/3",
             always_callback=True,
         )
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         sensor.register_device_updated_cb(after_update_callback)
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray((0x01, 0x02))),
         )
-        await sensor.process(telegram)
+        sensor.process(telegram)
         after_update_callback.assert_called_with(sensor)
         assert sensor.last_telegram == telegram
         # every telegram shall trigger callback
         after_update_callback.reset_mock()
-        await sensor.process(telegram)
+        sensor.process(telegram)
         after_update_callback.assert_called_with(sensor)
 
     #

@@ -1,4 +1,5 @@
 """Module for KNX Data Secure."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -37,6 +38,12 @@ def _initial_sequence_number() -> int:
 
 class DataSecure:
     """Class for KNX Data Secure handling."""
+
+    __slots__ = (
+        "_group_key_table",
+        "_individual_address_table",
+        "_sequence_number_sending",
+    )
 
     def __init__(
         self,
@@ -116,7 +123,7 @@ class DataSecure:
             raise DataSecureError(
                 f"Source address not found in Security Individual Address Table: {source_address}",
                 log_level=logging.INFO,
-            )
+            ) from None
         if not received_sequence_number > last_valid_sequence_number:
             # TODO: implement and increment Security Failure Log counter (not when equal)
             raise DataSecureError(

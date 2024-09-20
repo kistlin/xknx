@@ -1,4 +1,5 @@
 """Cryptographical calculations of KNX specification example frames."""
+
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
@@ -157,7 +158,7 @@ def calculate_wrapper(
     return encrypted_data
 
 
-def main():
+def main() -> None:
     """Recalculate KNX specification example frames."""
     ################
     # SessionRequest

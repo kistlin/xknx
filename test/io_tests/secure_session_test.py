@@ -1,4 +1,5 @@
 """Test Secure Session."""
+
 import asyncio
 from unittest.mock import Mock, patch
 
@@ -64,8 +65,7 @@ class TestSecureSession:
         )
 
     def teardown_method(self):
-        """Cancel keepalive task."""
-        self.session.stop()
+        """Tear down test class."""
         self.patch_serial_number.stop()
         self.patch_message_tag.stop()
 
@@ -91,7 +91,8 @@ class TestSecureSession:
             SessionRequest(ecdh_client_public_key=self.mock_public_key)
         )
         mock_super_send.assert_called_once_with(
-            session_request_frame, None  # None for addr in TCP transport
+            session_request_frame,
+            None,  # None for addr in TCP transport
         )
         mock_super_send.reset_mock()
         # incoming
@@ -124,7 +125,8 @@ class TestSecureSession:
             )
         )
         mock_super_send.assert_called_once_with(
-            encrypted_authenticate_frame, None  # None for addr in TCP transport
+            encrypted_authenticate_frame,
+            None,  # None for addr in TCP transport
         )
         mock_super_send.reset_mock()
         # incoming
@@ -164,9 +166,10 @@ class TestSecureSession:
         mock_super_send.reset_mock()
 
         # SessionStatus CLOSE sent on graceful disconnect
-        with patch.object(
-            self.session, "send", wraps=self.session.send
-        ) as mock_send, patch.object(self.session, "transport") as mock_transport:
+        with (
+            patch.object(self.session, "send", wraps=self.session.send) as mock_send,
+            patch.object(self.session, "transport") as mock_transport,
+        ):
             self.session.stop()
             mock_send.assert_called_once_with(session_status_close_frame)
             mock_super_send.assert_called_once()
@@ -267,6 +270,9 @@ class TestSecureSession:
         )
         await time_travel(0)
         callback_mock.assert_not_called()
+        # async teardown
+        self.session.stop()
+        assert self.session.initialized is False
 
     @patch("xknx.io.transport.tcp_transport.TCPTransport.connect")
     @patch("xknx.io.transport.tcp_transport.TCPTransport.send")
@@ -350,7 +356,8 @@ class TestSecureSession:
             )
         )
         mock_super_send.assert_called_once_with(
-            encrypted_authenticate_frame, None  # None for addr in TCP transport
+            encrypted_authenticate_frame,
+            None,  # None for addr in TCP transport
         )
         # incoming
         encrypted_session_status_frame = KNXIPFrame.init_from_body(
@@ -370,6 +377,9 @@ class TestSecureSession:
         )
         await connect_task
         assert self.session.initialized is True
+        # async teardown
+        self.session.stop()
+        assert self.session.initialized is False
 
     @patch("xknx.io.transport.tcp_transport.TCPTransport.connect")
     @patch("xknx.io.transport.tcp_transport.TCPTransport.send")

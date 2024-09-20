@@ -13,40 +13,52 @@ The module supports all different writings of group addresses:
 * 2nd level: "1/2"
 * Free format: "123"
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
 from re import compile as re_compile
-from typing import ClassVar, Optional, TypeVar, Union
+from typing import ClassVar, Union
 
 from xknx.exceptions import CouldNotParseAddress
+from xknx.typing import Self
 
-GroupAddressableType = Optional[Union["GroupAddress", str, int]]
-IndividualAddressableType = Optional[Union["IndividualAddress", str, int]]
+GroupAddressableType = Union["GroupAddress", str, int]
+IndividualAddressableType = Union["IndividualAddress", str, int]
 InternalGroupAddressableType = Union["InternalGroupAddress", str]
-DeviceAddressableType = Union[GroupAddressableType, InternalGroupAddressableType]
+DeviceAddressableType = GroupAddressableType | InternalGroupAddressableType
 DeviceGroupAddress = Union["GroupAddress", "InternalGroupAddress"]
-# py3.10 backwards compatibility - in py3.11 typing.Self is available
-Self = TypeVar("Self", bound="BaseAddress")
+
+
+INVALID_PREFIX_MESSAGE = "Invalid prefix for internal group address"
 
 
 def parse_device_group_address(
     address: DeviceAddressableType,
 ) -> DeviceGroupAddress:
     """Parse an Addressable type to GroupAddress or InternalGroupAddress."""
-    if isinstance(address, (GroupAddress, InternalGroupAddress)):
-        return address
     try:
-        return GroupAddress(address)
+        group_address = GroupAddress(address)  # type: ignore[arg-type]  # InternalGroupAddress will raise
     except CouldNotParseAddress as ex:
-        if isinstance(address, str):
-            return InternalGroupAddress(address)
+        if isinstance(address, str | InternalGroupAddress):
+            try:
+                return InternalGroupAddress(address)
+            except CouldNotParseAddress as internal_ex:
+                # prefer to raise original exception from GroupAddress
+                if internal_ex.message != INVALID_PREFIX_MESSAGE:
+                    raise internal_ex
         raise ex
+
+    if group_address.raw == 0:
+        raise CouldNotParseAddress(address, "Broadcast address invalid for devices")
+    return group_address
 
 
 class BaseAddress(ABC):
     """Base class for all knx address types."""
+
+    __slots__ = ("raw",)
 
     raw: int
 
@@ -76,7 +88,7 @@ class BaseAddress(ABC):
         Returns `True` if we check against the same subclass and the
         raw Value matches.
         """
-        return self.__hash__() == other.__hash__()
+        return isinstance(other, self.__class__) and self.raw == other.raw
 
     def __hash__(self) -> int:
         """Hash Address so it can be used as dict key."""
@@ -85,6 +97,8 @@ class BaseAddress(ABC):
 
 class IndividualAddress(BaseAddress):
     """Class for handling KNX individual addresses."""
+
+    __slots__ = ()
 
     MAX_AREA = 15
     MAX_MAIN = 15
@@ -104,13 +118,13 @@ class IndividualAddress(BaseAddress):
                 self.raw = int(address)
             else:
                 self.raw = self.__string_to_int(address)
-        elif address is None:
-            self.raw = 0
         else:
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(address, message="Invalid type")
 
         if not 0 <= self.raw <= 65535:
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(
+                address, message="Address out of range (0..65535)"
+            )
 
     def __string_to_int(self, address: str) -> int:
         """
@@ -124,12 +138,22 @@ class IndividualAddress(BaseAddress):
         """
         match = self.ADDRESS_RE.match(address)
         if not match:
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(address, message="Invalid format")
         area = int(match.group("area"))
         main = int(match.group("main"))
         line = int(match.group("line"))
-        if area > self.MAX_AREA or main > self.MAX_MAIN or line > self.MAX_LINE:
-            raise CouldNotParseAddress(address)
+        if area > self.MAX_AREA:
+            raise CouldNotParseAddress(
+                address, message=f"Area part out of range (0..{self.MAX_AREA})"
+            )
+        if main > self.MAX_MAIN:
+            raise CouldNotParseAddress(
+                address, message=f"Line part out of range (0..{self.MAX_MAIN})"
+            )
+        if line > self.MAX_LINE:
+            raise CouldNotParseAddress(
+                address, message=f"Device part out of range (0..{self.MAX_LINE})"
+            )
         return (area << 12) + (main << 8) + line
 
     @property
@@ -184,6 +208,8 @@ class GroupAddressType(Enum):
 class GroupAddress(BaseAddress):
     """Class for handling KNX group addresses."""
 
+    __slots__ = ()
+
     # overridden by XKNX class on initialization to have consistent global string representation
     address_format: ClassVar[GroupAddressType] = GroupAddressType.LONG
 
@@ -208,13 +234,13 @@ class GroupAddress(BaseAddress):
                 self.raw = int(address)
             else:
                 self.raw = self.__string_to_int(address)
-        elif address is None:
-            self.raw = 0
         else:
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(address, message="Invalid type")
 
         if not 0 <= self.raw <= 65535:
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(
+                address, message="Address out of range (0..65535)"
+            )
 
     def __string_to_int(self, address: str) -> int:
         """
@@ -228,21 +254,29 @@ class GroupAddress(BaseAddress):
         """
         match = self.ADDRESS_RE.match(address)
         if not match:
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(address, message="Invalid format")
         main = int(match.group("main"))
         middle = (
             int(match.group("middle")) if match.group("middle") is not None else None
         )
         sub = int(match.group("sub"))
         if main > self.MAX_MAIN:
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(
+                address, message=f"Main group out of range (0..{self.MAX_MAIN})"
+            )
         if middle is not None:
             if middle > self.MAX_MIDDLE:
-                raise CouldNotParseAddress(address)
+                raise CouldNotParseAddress(
+                    address, message=f"Middle group out of range (0..{self.MAX_MIDDLE})"
+                )
             if sub > self.MAX_SUB_LONG:
-                raise CouldNotParseAddress(address)
+                raise CouldNotParseAddress(
+                    address, message=f"Sub group out of range (0..{self.MAX_SUB_LONG})"
+                )
         elif sub > self.MAX_SUB_SHORT:
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(
+                address, message=f"Sub group out of range (0..{self.MAX_SUB_SHORT})"
+            )
         return (
             (main << 11) + (middle << 8) + sub
             if middle is not None
@@ -310,33 +344,36 @@ class GroupAddress(BaseAddress):
 class InternalGroupAddress:
     """Class for handling addresses used internally in xknx devices only."""
 
+    __slots__ = ("raw",)
+
     def __init__(self, address: str | InternalGroupAddress) -> None:
         """Initialize InternalGroupAddress class."""
-        self.address: str
+        self.raw: str
 
         if isinstance(address, InternalGroupAddress):
-            self.address = address.address
+            self.raw = address.raw
             return
         if not isinstance(address, str):
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(address, message="Invalid type")
 
         prefix_length = 1
         if len(address) < 2 or address[0].lower() != "i":
-            raise CouldNotParseAddress(address)
+            raise CouldNotParseAddress(address, message=INVALID_PREFIX_MESSAGE)
         if address[1] in "-_":
             prefix_length = 2
 
-        self.address = address[prefix_length:].strip()
-        if not self.address:
-            raise CouldNotParseAddress(address)
+        _raw = address[prefix_length:].strip()
+        if not _raw:
+            raise CouldNotParseAddress(address, message="No chars after prefix")
+        self.raw = f"i-{_raw}"
 
     def __str__(self) -> str:
         """Return object as readable string (e.g. 'i-123')."""
-        return f"i-{self.address}"
+        return self.raw
 
     def __repr__(self) -> str:
         """Return object as parsable string."""
-        return f'InternalGroupAddress("{self}")'
+        return f'InternalGroupAddress("{self.raw}")'
 
     def __eq__(self, other: object | None) -> bool:
         """
@@ -345,8 +382,8 @@ class InternalGroupAddress:
         Returns `True` if we check against the same subclass and the
         raw Value matches.
         """
-        return self.__hash__() == other.__hash__()
+        return isinstance(other, self.__class__) and self.raw == other.raw
 
     def __hash__(self) -> int:
         """Hash Address so it can be used as dict key."""
-        return hash((self.__class__, self.address))
+        return hash((self.__class__, self.raw))

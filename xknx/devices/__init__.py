@@ -1,10 +1,10 @@
 """Module for handling devices like Lights, Switches or Covers."""
-# flake8: noqa
+
 from .binary_sensor import BinarySensor
 from .climate import Climate
 from .climate_mode import ClimateMode
 from .cover import Cover
-from .datetime import DateTime
+from .datetime import DateDevice, DateTimeDevice, TimeDevice
 from .device import Device
 from .devices import Devices
 from .expose_sensor import ExposeSensor
@@ -24,7 +24,9 @@ __all__ = [
     "Climate",
     "ClimateMode",
     "Cover",
-    "DateTime",
+    "DateTimeDevice",
+    "DateDevice",
+    "TimeDevice",
     "Device",
     "Devices",
     "ExposeSensor",

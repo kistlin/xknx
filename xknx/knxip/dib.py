@@ -10,6 +10,7 @@ A KNX/IP Search Response may contain several DIBs of different types:
 * DIBGeneric:           General Information
                         (fallback for unknown dib type codes)
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -105,7 +106,7 @@ class DIBGeneric(DIB):
             try:
                 self.dtc = DIBTypeCode(self.dtc)
             except ValueError:
-                raise CouldNotParseKNXIP("DTC invalid")
+                raise CouldNotParseKNXIP("DTC invalid") from None
         return (
             bytes((self.calculated_length(), self.dtc.value))
             + self.data
@@ -127,7 +128,7 @@ class DIBDeviceInformation(DIB):
         """Initialize DIBDeviceInformation class."""
         self.knx_medium: KNXMedium = KNXMedium.TP1
         self.programming_mode: bool = False
-        self.individual_address: IndividualAddress = IndividualAddress(None)
+        self.individual_address: IndividualAddress = IndividualAddress(0)
         self.installation_number: int = 0
         self.project_number: int = 0
         self.serial_number: str = ""

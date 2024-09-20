@@ -1,5 +1,6 @@
 """Unit test for Sensor objects."""
-from unittest.mock import AsyncMock
+
+from unittest.mock import Mock
 
 import pytest
 
@@ -415,7 +416,7 @@ class TestSensor:
             (
                 "percentV16",
                 DPTArray((0x8A, 0x2F)),
-                -30161,
+                -301.61,
             ),
             (
                 "phaseanglerad",
@@ -590,12 +591,12 @@ class TestSensor:
             (
                 "time_period_100msec",
                 DPTArray((0x6A, 0x35)),
-                27189,
+                2718900,
             ),
             (
                 "time_period_10msec",
                 DPTArray((0x32, 0x3)),
-                12803,
+                128030,
             ),
             (
                 "time_period_hrs",
@@ -683,7 +684,7 @@ class TestSensor:
             group_address_state="1/2/3",
             value_type=value_type,
         )
-        await sensor.process(
+        sensor.process(
             Telegram(
                 destination_address=GroupAddress("1/2/3"),
                 payload=GroupValueWrite(value=raw_payload),
@@ -702,7 +703,7 @@ class TestSensor:
             always_callback=False,
             value_type="volume_liquid_litre",
         )
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         sensor.register_device_updated_cb(after_update_callback)
         payload = DPTArray((0x00, 0x00, 0x01, 0x00))
         #  set initial payload of sensor
@@ -715,18 +716,18 @@ class TestSensor:
             payload=GroupValueResponse(payload),
         )
         # verify not called when always_callback is False
-        await sensor.process(telegram)
+        sensor.process(telegram)
         after_update_callback.assert_not_called()
         after_update_callback.reset_mock()
 
         sensor.always_callback = True
         # verify called when always_callback is True
-        await sensor.process(telegram)
+        sensor.process(telegram)
         after_update_callback.assert_called_once()
         after_update_callback.reset_mock()
 
         # verify not called when processing read responses
-        await sensor.process(response_telegram)
+        sensor.process(response_telegram)
         after_update_callback.assert_not_called()
 
     #
@@ -771,7 +772,7 @@ class TestSensor:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray((0x06, 0xA0))),
         )
-        await sensor.process(telegram)
+        sensor.process(telegram)
         assert sensor.sensor_value.value == 16.96
         assert sensor.sensor_value.telegram.payload.value == DPTArray((0x06, 0xA0))
         assert sensor.resolve_state() == 16.96
@@ -785,13 +786,13 @@ class TestSensor:
         sensor = Sensor(
             xknx, "TestSensor", group_address_state="1/2/3", value_type="temperature"
         )
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         sensor.register_device_updated_cb(after_update_callback)
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray((0x01, 0x02))),
         )
-        await sensor.process(telegram)
+        sensor.process(telegram)
         after_update_callback.assert_called_with(sensor)
         assert sensor.last_telegram == telegram

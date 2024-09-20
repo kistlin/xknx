@@ -10,6 +10,7 @@ It provides functionality for
 read from e.g. an internet serviceand exposed to the KNX bus.
 KNX devices may show this value within their display.)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +39,7 @@ class ExposeSensor(Device):
         self,
         xknx: XKNX,
         name: str,
-        group_address: GroupAddressesType | None = None,
+        group_address: GroupAddressesType = None,
         respond_to_read: bool = True,
         value_type: int | str | None = None,
         cooldown: float = 0,
@@ -55,7 +56,7 @@ class ExposeSensor(Device):
                 group_address=group_address,
                 sync_state=False,
                 device_name=self.name,
-                after_update_cb=self.after_update,
+                after_update_cb=self.expose_after_update,
             )
         else:
             self.sensor_value = RemoteValueSensor(
@@ -63,38 +64,40 @@ class ExposeSensor(Device):
                 group_address=group_address,
                 sync_state=False,
                 device_name=self.name,
-                after_update_cb=self.after_update,
+                after_update_cb=self.expose_after_update,
                 value_type=value_type,
             )
         self._cooldown_latest_value: Any | None = None
         self._cooldown_task: Task | None = None
         self._cooldown_task_name = f"expose_sensor.cooldown_{id(self)}"
 
-    async def after_update(self) -> None:
+    def expose_after_update(self, value: int | float | str | bool) -> None:
         """Call after state was updated."""
-        self._cooldown_latest_value = self.sensor_value.value
-        await super().after_update()
+        self._cooldown_latest_value = value
+        super().after_update()
 
     def _iter_remote_values(self) -> Iterator[RemoteValue[Any]]:
         """Iterate the devices RemoteValue classes."""
         yield self.sensor_value
 
-    def _iter_tasks(self) -> Iterator[Task | None]:
-        """Iterate the device tasks."""
-        yield self._cooldown_task
+    def async_remove_tasks(self) -> None:
+        """Remove async tasks of device."""
+        if self._cooldown_task is not None:
+            self.xknx.task_registry.unregister(self._cooldown_task.name)
+            self._cooldown_task = None
 
-    async def process_group_write(self, telegram: Telegram) -> None:
+    def process_group_write(self, telegram: Telegram) -> None:
         """Process incoming and outgoing GROUP WRITE telegram."""
-        await self.sensor_value.process(telegram)
+        self.sensor_value.process(telegram)
 
-    async def process_group_read(self, telegram: Telegram) -> None:
+    def process_group_read(self, telegram: Telegram) -> None:
         """Process incoming GROUP READ telegram."""
         if not self.respond_to_read:
             return
         if self._cooldown_latest_value is not None:
-            await self.sensor_value.set(self._cooldown_latest_value, response=True)
+            self.sensor_value.set(self._cooldown_latest_value, response=True)
             return
-        await self.sensor_value.respond()
+        self.sensor_value.respond()
 
     async def set(self, value: Any) -> None:
         """Set new value."""
@@ -106,7 +109,7 @@ class ExposeSensor(Device):
                 name=self._cooldown_task_name,
                 async_func=self._cooldown_wait,
             ).start()
-        await self.sensor_value.set(value)
+        self.sensor_value.set(value)
 
     async def _cooldown_wait(self) -> None:
         """Send value after cooldown if it differs from last processed value."""
@@ -114,7 +117,7 @@ class ExposeSensor(Device):
             await asyncio.sleep(self.cooldown)
             if self.sensor_value.value == self._cooldown_latest_value:
                 break
-            await self.sensor_value.set(self._cooldown_latest_value)  # type: ignore[arg-type]
+            self.sensor_value.set(self._cooldown_latest_value)  # type: ignore[arg-type]
 
     def unit_of_measurement(self) -> str | None:
         """Return the unit of measurement."""

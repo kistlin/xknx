@@ -5,6 +5,7 @@ This class represents a CEMI Client vaguely according to KNX specification 3/6/3
 It is responsible for sending and receiving CEMI frames to/from a CEMI Server - this
 can be a remote server when using IP tunnelling or a local server when using IP routing.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -84,7 +85,7 @@ class CEMIHandler:
             self.xknx.connection_manager.cemi_count_outgoing_error += 1
             raise ConfirmationError(
                 f"L_DATA_CON Data Link Layer confirmation timed out for {cemi}"
-            )
+            ) from None
         self.xknx.connection_manager.cemi_count_outgoing += 1
 
     def handle_raw_cemi(self, raw_cemi: bytes) -> None:

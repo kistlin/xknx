@@ -1,11 +1,12 @@
 """Package for management communication."""
+
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator
 from contextlib import asynccontextmanager
 import logging
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from xknx.exceptions import (
     CommunicationError,
@@ -14,9 +15,16 @@ from xknx.exceptions import (
     ManagementConnectionRefused,
     ManagementConnectionTimeout,
 )
-from xknx.telegram import IndividualAddress, Telegram
+from xknx.telegram import GroupAddress, IndividualAddress, Telegram
 from xknx.telegram.apci import APCI
-from xknx.telegram.tpci import TAck, TConnect, TDataConnected, TDisconnect, TNak
+from xknx.telegram.tpci import (
+    TAck,
+    TConnect,
+    TDataBroadcast,
+    TDataConnected,
+    TDisconnect,
+    TNak,
+)
 from xknx.util import asyncio_timeout
 
 if TYPE_CHECKING:
@@ -34,6 +42,7 @@ class Management:
         """Initialize Management class."""
         self.xknx = xknx
         self._connections: dict[IndividualAddress, P2PConnection] = {}
+        self._broadcast_contexts: set[BroadcastContext] = set()
 
     def process(self, telegram: Telegram) -> None:
         """Process incoming telegrams."""
@@ -64,6 +73,10 @@ class Management:
             self.xknx.task_registry.background(
                 self.xknx.cemi_handler.send_telegram(disconnect)
             )
+            return
+        if isinstance(telegram.tpci, TDataBroadcast):
+            for context in self._broadcast_contexts:
+                context.queue.put_nowait(telegram)
             return
         logger.debug("Unhandled management telegram: %r", telegram)
         return
@@ -116,6 +129,49 @@ class Management:
         finally:
             await self.disconnect(address)
 
+    async def send_broadcast(self, payload: APCI) -> None:
+        """Send a broadcast message."""
+        await self.xknx.cemi_handler.send_telegram(
+            Telegram(
+                GroupAddress("0/0/0"),
+                tpci=TDataBroadcast(),
+                payload=payload,
+            )
+        )
+
+    @asynccontextmanager
+    async def broadcast(self) -> AsyncIterator[BroadcastContext]:
+        """Provide a broadcast context."""
+        context = BroadcastContext()
+        self._broadcast_contexts.add(context)
+        try:
+            yield context
+        finally:
+            self._broadcast_contexts.remove(context)
+
+
+class BroadcastContext:
+    """Class providing broadcast contexts."""
+
+    def __init__(self) -> None:
+        """Initialize BroadcastContext class."""
+        self.queue: asyncio.Queue[Telegram] = asyncio.Queue()
+
+    async def receive(
+        self,
+        timeout: float | None = 3,
+    ) -> AsyncGenerator[Telegram, None]:
+        """Receive telegrams from the broadcast context."""
+        try:
+            async with asyncio_timeout(timeout):
+                while True:
+                    try:
+                        yield await self.queue.get()
+                    except GeneratorExit:
+                        return
+        except asyncio.TimeoutError:
+            return
+
 
 class P2PConnection:
     """Class to manage a point-to-point connection with a KNX device."""
@@ -131,9 +187,9 @@ class P2PConnection:
         self._connected = False
 
         self._ack_waiter: asyncio.Future[TAck | TNak] | None = None
-        self._response_waiter: asyncio.Future[
-            Telegram
-        ] = asyncio.get_event_loop().create_future()
+        self._response_waiter: asyncio.Future[Telegram] = (
+            asyncio.get_event_loop().create_future()
+        )
 
     @staticmethod
     def _sequence_number_generator() -> Generator[int, None, None]:
@@ -200,7 +256,7 @@ class P2PConnection:
             if not self._response_waiter.done():
                 self._response_waiter.set_exception(ManagementConnectionRefused())
             return
-        if isinstance(telegram.tpci, (TAck, TNak)):
+        if isinstance(telegram.tpci, TAck | TNak):
             if not self._ack_waiter:
                 logger.warning("Received unexpected ACK/NAK: %s", telegram)
                 return

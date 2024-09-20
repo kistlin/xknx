@@ -6,6 +6,142 @@ nav_order: 2
 
 # Changelog
 
+### Features
+
+- Added fan speed support to climate
+
+# 3.1.1 Fix Eberle status 2024-08-19
+
+### Bugfixes
+
+- Fix DPTHVACStatus inverted bit order
+
+# 3.1.0 DPT 1 2024-08-13
+
+### DPT
+
+- Add DPT 1 definitions (as of KNX Specification 03_07_02 version 02.02.01)
+
+### Devices
+
+- ClimateMode: Restore `Climate.suppports_operation_mode` and `Climate.supports_controller_mode` to be `True` when read-only (like pre 3.0.0)
+- ClimateMode: Filter custom controller / operation modes for available settable modes
+- ClimateMode: For binary operation modes, only list configured modes and `Standby` in `operation_modes`
+
+### Bugfixes
+
+- Fix log message for DPT decoding errors in `GroupAddressDPT` parsing
+
+# 3.0.0 Eager telegram decoding, DPTComplex and DPTEnum 2024-07-31
+
+### Breaking changes
+
+- Drop support for Python 3.9
+- Change callback signatures from awaitable to callable in `XKNX.device_updated_cb`, TelegramQueue, Device, Devices, ConnectionManager and RemoteValue.
+- Remove `async` from functions / methods (nothing has to be awaited there)
+  - Tools:  `group_value_write`, `group_value_response` and `group_value_read`
+  - ConnectionManager: `.connection_state_changed`
+  - Device: `.process`, `.process_group_write`, `.process_group_read`, `.process_group_response`
+  - Devices: `.process`
+  - RemoteValue: `.set`, `.respond`, `.process` and `.update_value`
+  - ValueReader: `.send_group_read`
+- Rename DPT transcoder modules for schema `xknx.dpt.dpt_<main-number>.py`
+
+### Bugfixes
+
+- Fix value scaling for sensor types: time_period_100msec, time_period_10msec, delta_time_10ms, delta_time_100ms, percentV16
+
+### Features
+
+- Added eager telegram data decoding for GroupValueWrite / GroupValueResponse Telegrams. DPTs for group addresses can be set using `xknx.group_address_dpt.set()`. `Telegram` has a new attribute `decoded_data` which is set when a decoder was found.
+
+### Devices
+
+- A Device doesn't auto-add to `xknx.devices` anymore. It can be done via `xknx.devices.async_add()` now. `xknx.devices.async_remove` stops a device from processing telegrams, removes from StateUpdater and cancels its internal tasks. Removed devices can be added again.
+- `Device.shutdown` method is removed
+- Refactor `ClimateMode` device
+- Rename `ClimateMode` argument `group_address_operation_mode_night` to `group_address_operation_mode_economy`
+- Remove DPT 3 special handling `stepwise_*` and `startstop_*` from Sensor device
+- Remove `DateTime` device in favour of `DateDevice`, `TimeDevice` and `DateTimeDevice` using `datetime` objects instead of `time.struct_time`
+
+### DPT
+
+- DPTComplex: Common interface for DPT transcoders with multi-value data. Resulting dataclasses can be converted to and from a dict with DPT specific properties to be JSON compatible.
+- Added or refactored complex DPTs and dataclasses:
+  - 3.007 - DPTControlDimming
+  - 3.008 - DPTControlBlinds
+  - 10.001 - DPTTime - KNXTime
+  - 11.001 - DPTDate - KNXDate
+  - 18.001 - DPTSceneControl
+  - 19.001 - DPTDateTime - KNXDateTime
+  - 232.600 - DPTColorRGB - RGBColor
+  - 235.001 - DPTTariffActiveEnergy - TariffActiveEnergy
+  - 242.600 - DPTColorXYY - XYYColor
+  - 251.600 - DPTColorRGBW - RGBWColor
+  - 20.60102 - DPTHVACStatus - HVACStatus (removed DPTControllerStatus in favour of this)
+- DPTEnum: Common interface for DPT representing enumueration values. Transcoders accept Enum, string or raw integer values for encoding.
+  - 1.007 - DPTStep
+  - 1.008 - DPTUpDown
+  - 1.100 - DPTHeatCool
+  - 20.102 - DPTHVACMode - HVACOperationMode
+    - rename "NIGHT" to "ECONOMY" and "FROST_PROTECTION" to "BUILDING_PROTECTION" according to KNX specifications
+  - 20.105 - DPTHVACContrMode - HVACControllerMode
+    - rename "DRY" to "DEHUMIDIFICATION" and add some values according to KNX specifications
+- Change DPT number of Enthalpy from 9.999 to 9.60000 (manufacturer specific range)
+- Support dict values with "main" and "sub" keys for `DPTBase.parse_transcoder()`
+- Verify DPTBinary max payload bitsize when decoding by transcoders `payload_length`
+
+### Address
+
+- `InternalGroupAddress` attribute `address` is renamed to `raw` to be in line with `GroupAddress` (although still str). Its value has an "i-" prefix.
+
+### Internal
+
+- Use `slots` in addresses, Telegram, DPTBinary, DPTArray, TPCI, APCI, DPTComplexData
+- Convert Telegram and APCI to dataclasses. `Telegram` is not hashable anymore.
+- RemoteValue instances use pre-decoded data from Telegrams if available and `dpt_class` for is set - otherwise they decode the data themselves in `from_knx` like before.
+- Remove RemoteValueControl and unused RemoteValue1Count class
+- Add value argument to RemoteValue `after_update_cb` callback
+
+# 2.12.2 Fix thread leak 2024-03-05
+
+### Bugfixes
+
+- Fix thread leak when initial connection attempt fails (on threaded connection mode).
+
+# 2.12.1 Address error messages 2024-02-26
+
+### Internal
+
+- More detailed address parsing error messages.
+
+# 2.12.0 Broadcasts 2024-02-05
+
+### Bugfixes
+
+- `None` is not a valid address parameter for GroupAddress and IndividualAddress anymore. It raises `CouldNotParseAddress`.
+- `None` in a RemoteValue or Device group address list is now ignored instead of parsed as broadcast address.
+- Broadcast address ("0/0/0") is now invalid for RemoteValue and Device group addresses and raises `CouldNotParseAddress`.
+
+### Management
+
+- Add handling mechanism and sending method for broadcast telegrams in the management class.
+- Add new management procedures for device management: `nm_invididual_address_write`,  `nm_individual_address_read`, `nm_individual_address_serial_number_read` and `nm_individual_address_serial_number_write`.
+
+### Secure
+
+- Parse `project_name` from an ETS Keyring.
+
+### Internal
+
+- Use ruff format and more ruff linters. Remove black, isort, flake8 and pyupgrade from requirements.
+
+# 2.11.2 DPT 9 small negative fix 2023-07-24
+
+### Bugfixes
+
+- Fix DPT 9 handling of values < `0` and >= `-0.005`. These are now rounded to `0` instead of being sent as `-20.48`.
+
 # 2.11.1 DateTime fix 2023-06-26
 
 ### Bugfixes

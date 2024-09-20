@@ -12,12 +12,13 @@ It provides functionality for
 * reading current humidity (DPT 9.007)
 
 """
+
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from xknx.remote_value import (
     GroupAddressesType,
@@ -85,19 +86,19 @@ class Weather(Device):
         self,
         xknx: XKNX,
         name: str,
-        group_address_temperature: GroupAddressesType | None = None,
-        group_address_brightness_south: GroupAddressesType | None = None,
-        group_address_brightness_north: GroupAddressesType | None = None,
-        group_address_brightness_west: GroupAddressesType | None = None,
-        group_address_brightness_east: GroupAddressesType | None = None,
-        group_address_wind_speed: GroupAddressesType | None = None,
-        group_address_wind_bearing: GroupAddressesType | None = None,
-        group_address_rain_alarm: GroupAddressesType | None = None,
-        group_address_frost_alarm: GroupAddressesType | None = None,
-        group_address_wind_alarm: GroupAddressesType | None = None,
-        group_address_day_night: GroupAddressesType | None = None,
-        group_address_air_pressure: GroupAddressesType | None = None,
-        group_address_humidity: GroupAddressesType | None = None,
+        group_address_temperature: GroupAddressesType = None,
+        group_address_brightness_south: GroupAddressesType = None,
+        group_address_brightness_north: GroupAddressesType = None,
+        group_address_brightness_west: GroupAddressesType = None,
+        group_address_brightness_east: GroupAddressesType = None,
+        group_address_wind_speed: GroupAddressesType = None,
+        group_address_wind_bearing: GroupAddressesType = None,
+        group_address_rain_alarm: GroupAddressesType = None,
+        group_address_frost_alarm: GroupAddressesType = None,
+        group_address_wind_alarm: GroupAddressesType = None,
+        group_address_day_night: GroupAddressesType = None,
+        group_address_air_pressure: GroupAddressesType = None,
+        group_address_humidity: GroupAddressesType = None,
         sync_state: bool | int | float | str = True,
         device_updated_cb: DeviceCallbackType[Weather] | None = None,
     ) -> None:
@@ -246,10 +247,10 @@ class Weather(Device):
         yield self._air_pressure
         yield self._humidity
 
-    async def process_group_write(self, telegram: Telegram) -> None:
+    def process_group_write(self, telegram: Telegram) -> None:
         """Process incoming and outgoing GROUP WRITE telegram."""
         for remote_value in self._iter_remote_values():
-            await remote_value.process(telegram)
+            remote_value.process(telegram)
 
     @property
     def temperature(self) -> float | None:

@@ -7,6 +7,7 @@ It provides functionality for
 * send local state changes to KNX bus.
 * watching for state updates from KNX bus.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -29,8 +30,8 @@ class RawValue(Device):
         xknx: XKNX,
         name: str,
         payload_length: int,
-        group_address: GroupAddressesType | None = None,
-        group_address_state: GroupAddressesType | None = None,
+        group_address: GroupAddressesType = None,
+        group_address_state: GroupAddressesType = None,
         respond_to_read: bool = False,
         sync_state: bool | int | float | str = True,
         always_callback: bool = False,
@@ -59,21 +60,21 @@ class RawValue(Device):
         """Return the last telegram received from the RemoteValue."""
         return self.remote_value.telegram
 
-    async def process_group_write(self, telegram: Telegram) -> None:
+    def process_group_write(self, telegram: Telegram) -> None:
         """Process incoming and outgoing GROUP WRITE telegram."""
-        await self.remote_value.process(telegram, always_callback=self.always_callback)
+        self.remote_value.process(telegram, always_callback=self.always_callback)
 
-    async def process_group_read(self, telegram: Telegram) -> None:
+    def process_group_read(self, telegram: Telegram) -> None:
         """Process incoming GroupValueResponse telegrams."""
         if (
             self.respond_to_read
             and telegram.destination_address == self.remote_value.group_address
         ):
-            await self.remote_value.respond()
+            self.remote_value.respond()
 
     async def set(self, value: int) -> None:
         """Set new value."""
-        await self.remote_value.set(value)
+        self.remote_value.set(value)
 
     def resolve_state(self) -> int | None:
         """Return the current state of the sensor as an unsigned integer."""

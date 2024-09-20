@@ -4,6 +4,7 @@ Module for managing a remote value typically used within a sensor.
 The module maps a given value_type to a DPT class and uses this class
 for serialization and deserialization of the KNX value.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -11,7 +12,7 @@ from typing import TYPE_CHECKING
 from xknx.dpt.dpt import DPTArray, DPTBinary
 from xknx.exceptions import ConversionError, CouldNotParseTelegram
 
-from .remote_value import AsyncCallbackType, GroupAddressesType, RemoteValue
+from .remote_value import GroupAddressesType, RemoteValue, RVCallbackType
 
 if TYPE_CHECKING:
     from xknx.xknx import XKNX
@@ -24,12 +25,12 @@ class RemoteValueRaw(RemoteValue[int]):
         self,
         xknx: XKNX,
         payload_length: int,
-        group_address: GroupAddressesType | None = None,
-        group_address_state: GroupAddressesType | None = None,
+        group_address: GroupAddressesType = None,
+        group_address_state: GroupAddressesType = None,
         sync_state: bool | int | float | str = True,
         device_name: str | None = None,
         feature_name: str = "Raw",
-        after_update_cb: AsyncCallbackType | None = None,
+        after_update_cb: RVCallbackType[int] | None = None,
     ):
         """Initialize RemoteValueRaw class."""
         self.payload_length = payload_length

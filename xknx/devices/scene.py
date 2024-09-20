@@ -1,4 +1,5 @@
 """Module for managing a KNX scene."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -22,7 +23,7 @@ class Scene(Device):
         self,
         xknx: XKNX,
         name: str,
-        group_address: GroupAddressesType | None = None,
+        group_address: GroupAddressesType = None,
         scene_number: int = 1,
         device_updated_cb: DeviceCallbackType[Scene] | None = None,
     ):
@@ -45,7 +46,7 @@ class Scene(Device):
 
     async def run(self) -> None:
         """Activate scene."""
-        await self.scene_value.set(self.scene_number)
+        self.scene_value.set(self.scene_number)
 
     def __str__(self) -> str:
         """Return object as readable string."""

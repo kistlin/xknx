@@ -42,7 +42,7 @@ The constructor of the XKNX object takes several parameters:
   - LONG: representation like '1/2/34' with middle groups
 - `connection_state_changed_cb` is a callback which is called every time the connection state to the gateway changes. See [callbacks](#callbacks) documentation for details.
 - `telegram_received_cb` is a callback which is called after every received KNX telegram. See [callbacks](#callbacks) documentation for details.
-- `device_updated_cb` is an async callback after a [XKNX device](#devices) was updated. See [callbacks](#callbacks) documentation for details.
+- `device_updated_cb` is a callback after a [XKNX device](#devices) was updated. See [callbacks](#callbacks) documentation for details.
 - `rate_limit` in telegrams per second - can be used to limit the outgoing traffic to the KNX/IP interface by the telegram queue. `0` disables rate limiter. Disabled by default.
 - `multicast_group` is the multicast group used for discovery - can be used to override the default multicast address (`224.0.23.12`)
 - `multicast_port` is the multicast port used for discovery - can be used to override the default multicast port (`3671`)
@@ -84,7 +84,7 @@ For SECURE tunnels this setting selects an interface from a given keyfile.
 await xknx.start()
 ```
 
-`xknx.start()` will search for KNX/IP devices in the network and either build a KNX/IP-Tunnel or open a mulitcast KNX/IP-Routing connection. `start()` will not take any parameters.
+`xknx.start()` will search for KNX/IP devices in the network and either build a KNX/IP-Tunnel or open a multicast KNX/IP-Routing connection. `start()` will not take any parameters.
 
 # [](#header-2)Stopping
 
@@ -105,7 +105,9 @@ async def main():
     async with XKNX() as xknx:
         switch = Switch(xknx,
                 name='TestSwitch',
-                group_address='1/1/11')
+                group_address='1/1/11'
+        )
+        xknx.devices.async_add(switch)
 
         await switch.set_on()
 
@@ -114,14 +116,18 @@ asyncio.run(main())
 
 # [](#header-2)Devices
 
-XKNX keeps all initialized devices in a local storage named `devices`. All devices may be accessed by their name: `xknx.devices['NameOfDevice']`. When an update via KNX GroupValueWrite or GroupValueResponse was received devices will be updated accordingly.
+To attach a device to XKNX call `xknx.devices.async_add(device)`. Added devices may be accessed by their name: `xknx.devices['NameOfDevice']`. When an update via KNX GroupValueWrite or GroupValueResponse was received devices will be updated accordingly.
+To remove a device from XKNX call `xknx.devices.async_remove(device)`. Removed devices can be re-added at a later point. This cancels background tasks of that device and disconnects it from receiving new telegrams.
 
 Example:
 
 ```python
-switch = Switch(xknx,
-                name='TestSwitch',
-                group_address='1/1/11')
+switch = Switch(
+    xknx,
+    name='TestSwitch',
+    group_address='1/1/11'
+)
+xknx.devices.async_add(switch)
 
 await xknx.devices['TestSwitch'].set_on()
 await xknx.devices['TestSwitch'].set_off()
@@ -129,14 +135,14 @@ await xknx.devices['TestSwitch'].set_off()
 
 # [](#header-2)Callbacks
 
-An awaitable `telegram_received_cb` will be called for each KNX telegram received by the XKNX daemon. Example:
+A callback `telegram_received_cb` will be called for each KNX telegram received by the XKNX daemon. Example:
 
 ```python
 import asyncio
 from xknx import XKNX
 from xknx.telegram import Telegram
 
-async def telegram_received_cb(telegram: Telegram):
+def telegram_received_cb(telegram: Telegram):
     print("Telegram received: {0}".format(telegram))
 
 async def main():
@@ -155,7 +161,7 @@ from xknx import XKNX
 from xknx.devices import Device, Switch
 
 
-async def device_updated_cb(device: Device):
+def device_updated_cb(device: Device):
     print("Callback received from {0}".format(device.name))
 
 
@@ -171,7 +177,7 @@ async def main():
 asyncio.run(main())
 ```
 
-An awaitable `connection_state_changed_cb` will be called every time the connection state to the gateway changes. Example:
+A callback `connection_state_changed_cb` will be called every time the connection state to the gateway changes. Example:
 
 ```python
 import asyncio
@@ -179,7 +185,7 @@ from xknx import XKNX
 from xknx.core import XknxConnectionState
 
 
-async def connection_state_changed_cb(state: XknxConnectionState):
+def connection_state_changed_cb(state: XknxConnectionState):
     print("Callback received with state {0}".format(state.name))
 
 

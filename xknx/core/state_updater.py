@@ -1,11 +1,12 @@
 """Module for keeping the value of a RemoteValue from KNX bus up to date."""
+
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from enum import Enum
 import logging
-from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Union
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from xknx.core import XknxConnectionState
 from xknx.remote_value import RemoteValue
@@ -27,7 +28,7 @@ class TrackerOptions(NamedTuple):
     update_interval_min: int | float
 
 
-TrackerOptionType = Union[bool, int, float, str, TrackerOptions]
+TrackerOptionType = bool | int | float | str | TrackerOptions
 
 
 class StateUpdater:
@@ -97,7 +98,7 @@ class StateUpdater:
         tracker_type = self._default_tracker_option.tracker_type
         update_interval: int | float = self._default_tracker_option.update_interval_min
 
-        if isinstance(tracker_options, (int, float)):
+        if isinstance(tracker_options, int | float):
             update_interval = check_update_interval(tracker_options)
         elif isinstance(tracker_options, str):
             _options = tracker_options.split()
@@ -202,9 +203,7 @@ class StateUpdater:
 
         self._stop()
 
-    async def connection_state_change_callback(
-        self, state: XknxConnectionState
-    ) -> None:
+    def connection_state_change_callback(self, state: XknxConnectionState) -> None:
         """Start and stop StateUpdater via connection state update."""
         if state == XknxConnectionState.CONNECTED:
             if not self.started:

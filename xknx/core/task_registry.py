@@ -1,10 +1,11 @@
 """Manages global tasks."""
+
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine, Generator
+from collections.abc import Callable, Coroutine, Generator
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from xknx.core import XknxConnectionState
 
@@ -124,10 +125,9 @@ class TaskRegistry:
 
     async def block_till_done(self) -> None:
         """Await all tracked tasks."""
-        for task in self.tasks:
-            await task
+        await asyncio.gather(*self.tasks)
 
-    async def connection_state_changed_cb(self, state: XknxConnectionState) -> None:
+    def connection_state_changed_cb(self, state: XknxConnectionState) -> None:
         """Handle connection state changes."""
         for task in self.tasks:
             if state == XknxConnectionState.CONNECTED:

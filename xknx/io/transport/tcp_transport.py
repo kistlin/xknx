@@ -3,11 +3,12 @@ TCPTransport is an abstraction for handling the complete TCP io.
 
 The module is build upon asyncio stream socket functions.
 """
+
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import logging
-from typing import Callable
 
 from xknx.exceptions import CommunicationError, CouldNotParseKNXIP, IncompleteKNXIPFrame
 from xknx.knxip import HPAI, HostProtocol, KNXIPFrame
@@ -40,7 +41,7 @@ class TCPTransport(KNXIPTransport):
             # cryptography (eg. X25519PublicKey.from_public_bytes() in IP Secure handshake)
             # https://github.com/python/cpython/issues/99941
             try:
-                if isinstance(asyncio.get_event_loop(), asyncio.ProactorEventLoop):  # type: ignore[attr-defined]
+                if isinstance(asyncio.get_event_loop(), asyncio.ProactorEventLoop):  # type: ignore[attr-defined, unused-ignore] # unused-ignore for Windows
                     self.data_received_callback = lambda data: data_received_callback(
                         bytes(data)
                     )

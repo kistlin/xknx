@@ -1,5 +1,6 @@
 """Unit test for Climate objects."""
-from unittest.mock import AsyncMock, patch
+
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -10,13 +11,13 @@ from xknx.dpt import (
     DPT2ByteFloat,
     DPTArray,
     DPTBinary,
-    DPTControllerStatus,
     DPTHVACContrMode,
     DPTHVACMode,
+    DPTHVACStatus,
     DPTTemperature,
     DPTValue1Count,
 )
-from xknx.dpt.dpt_hvac_mode import HVACControllerMode, HVACOperationMode
+from xknx.dpt.dpt_20 import HVACControllerMode, HVACOperationMode, HVACStatus
 from xknx.exceptions import ConversionError, DeviceIllegalValue
 from xknx.telegram import GroupAddress, Telegram
 from xknx.telegram.apci import GroupValueRead, GroupValueWrite
@@ -25,8 +26,8 @@ DPT_20102_MODES = [
     HVACOperationMode.AUTO,
     HVACOperationMode.COMFORT,
     HVACOperationMode.STANDBY,
-    HVACOperationMode.NIGHT,
-    HVACOperationMode.FROST_PROTECTION,
+    HVACOperationMode.ECONOMY,
+    HVACOperationMode.BUILDING_PROTECTION,
 ]
 
 
@@ -104,7 +105,7 @@ class TestClimate:
             group_address_operation_mode="1/2/4",
             group_address_operation_mode_state="1/2/5",
             group_address_operation_mode_protection="1/2/6",
-            group_address_operation_mode_night="1/2/7",
+            group_address_operation_mode_economy="1/2/7",
             group_address_operation_mode_comfort="1/2/8",
             group_address_operation_mode_standby="1/2/9",
             group_address_controller_status="1/2/10",
@@ -146,51 +147,25 @@ class TestClimate:
             group_address_setpoint_shift_state="1/2/4",
             setpoint_shift_mode=SetpointShiftMode.DPT6010,
         )
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         climate.register_device_updated_cb(after_update_callback)
+        xknx.devices.async_add(climate)
 
-        await climate.target_temperature.set(23.00)
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        climate.target_temperature.set(23.00)
+        xknx.devices.process(xknx.telegrams.get_nowait())
         after_update_callback.assert_called_with(climate)
         after_update_callback.reset_mock()
 
         await climate.set_setpoint_shift(-2)
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
         after_update_callback.assert_called_with(climate)
         after_update_callback.reset_mock()
-
-    def test_remove_climate_removes_climate_mode(self):
-        """Test shutting down climate will also shut down related ClimateMode."""
-
-        xknx = XKNX()
-        climate_mode = ClimateMode(
-            xknx,
-            name=None,
-            group_address_operation_mode="1/2/4",
-            group_address_operation_mode_state="1/2/5",
-            group_address_operation_mode_protection="1/2/6",
-            group_address_operation_mode_night="1/2/7",
-            group_address_operation_mode_comfort="1/2/8",
-            group_address_operation_mode_standby="1/2/9",
-            group_address_controller_status="1/2/10",
-            group_address_controller_status_state="1/2/11",
-            group_address_controller_mode="1/2/12",
-            group_address_controller_mode_state="1/2/13",
-            group_address_heat_cool="1/2/14",
-            group_address_heat_cool_state="1/2/15",
-        )
-
-        climate = Climate(xknx, name="TestClimate", mode=climate_mode)
-
-        assert len(xknx.devices) == 2
-        climate.shutdown()
-        assert len(xknx.devices) == 0
 
     async def test_process_callback_mode(self):
         """Test if after_update_callback is called after update of Climate object was changed."""
 
         xknx = XKNX()
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         climate_mode = ClimateMode(
             xknx,
             "TestClimate",
@@ -206,7 +181,7 @@ class TestClimate:
         after_update_callback.assert_not_called()
         after_update_callback.reset_mock()
 
-        await climate_mode.set_operation_mode(HVACOperationMode.FROST_PROTECTION)
+        await climate_mode.set_operation_mode(HVACOperationMode.BUILDING_PROTECTION)
         after_update_callback.assert_called_with(climate_mode)
         after_update_callback.reset_mock()
 
@@ -221,14 +196,14 @@ class TestClimate:
             group_address_target_temperature="1/2/2",
             group_address_setpoint_shift="1/2/3",
         )
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         climate.register_device_updated_cb(after_update_callback)
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/1"),
             payload=GroupValueWrite(DPTTemperature.to_knx(23)),
         )
-        await climate.process(telegram)
+        climate.process(telegram)
         after_update_callback.assert_called_with(climate)
         after_update_callback.reset_mock()
 
@@ -236,7 +211,7 @@ class TestClimate:
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPTTemperature.to_knx(23)),
         )
-        await climate.process(telegram)
+        climate.process(telegram)
         after_update_callback.assert_called_with(climate)
         after_update_callback.reset_mock()
 
@@ -244,7 +219,7 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTValue1Count.to_knx(-4)),
         )
-        await climate.process(telegram)
+        climate.process(telegram)
         after_update_callback.assert_called_with(climate)
         after_update_callback.reset_mock()
 
@@ -255,7 +230,7 @@ class TestClimate:
         climate_mode = ClimateMode(
             xknx, "TestClimateMode", group_address_operation_mode="1/2/4"
         )
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
 
         climate = Climate(xknx, "TestClimate", mode=climate_mode)
         climate_mode.register_device_updated_cb(after_update_callback)
@@ -266,7 +241,7 @@ class TestClimate:
             destination_address=GroupAddress("1/2/4"),
             payload=GroupValueWrite(DPTArray(1)),
         )
-        await climate.process(telegram)
+        climate.process(telegram)
         after_update_callback.assert_called_with(climate_mode)
         after_update_callback.reset_mock()
 
@@ -296,7 +271,7 @@ class TestClimate:
             xknx, "TestClimate", group_address_controller_mode="1/2/4"
         )
 
-        for _, controller_mode in DPTHVACContrMode.SUPPORTED_MODES.items():
+        for controller_mode in DPTHVACContrMode.get_valid_values():
             await climate_mode.set_controller_mode(controller_mode)
             assert xknx.telegrams.qsize() == 1
             telegram = xknx.telegrams.get_nowait()
@@ -320,22 +295,42 @@ class TestClimate:
             await climate_mode.set_controller_mode(HVACControllerMode.HEAT)
 
     async def test_set_operation_mode_with_controller_status(self):
-        """Test set_operation_mode with controller status adddressedefined."""
+        """Test set_operation_mode with controller status address defined."""
         xknx = XKNX()
         climate_mode = ClimateMode(
             xknx, "TestClimate", group_address_controller_status="1/2/4"
         )
 
-        for operation_mode in DPT_20102_MODES:
-            if operation_mode == HVACOperationMode.AUTO:
-                continue
-            await climate_mode.set_operation_mode(operation_mode)
-            assert xknx.telegrams.qsize() == 1
-            telegram = xknx.telegrams.get_nowait()
-            assert telegram == Telegram(
+        # needs to be initialized before it can be sent
+        with pytest.raises(ConversionError):
+            await climate_mode.set_controller_mode(HVACControllerMode.HEAT)
+
+        climate_mode.process(
+            Telegram(
                 destination_address=GroupAddress("1/2/4"),
-                payload=GroupValueWrite(DPTControllerStatus.to_knx(operation_mode)),
+                payload=GroupValueWrite(DPTArray((0x01,))),
             )
+        )
+        assert climate_mode.controller_mode == HVACControllerMode.COOL
+        assert climate_mode.operation_mode == HVACOperationMode.COMFORT
+
+        # controller mode
+        await climate_mode.set_controller_mode(HVACControllerMode.HEAT)
+        assert xknx.telegrams.qsize() == 1
+        telegram = xknx.telegrams.get_nowait()
+        assert telegram == Telegram(
+            destination_address=GroupAddress("1/2/4"),
+            payload=GroupValueWrite(DPTArray((0x21,))),
+        )
+        climate_mode.process(telegram)  # process to have internal value updated
+        # operation mode
+        await climate_mode.set_operation_mode(HVACOperationMode.STANDBY)
+        assert xknx.telegrams.qsize() == 1
+        telegram = xknx.telegrams.get_nowait()
+        assert telegram == Telegram(
+            destination_address=GroupAddress("1/2/4"),
+            payload=GroupValueWrite(DPTArray((0x22,))),
+        )
 
     async def test_set_operation_mode_with_separate_addresses(self):
         """Test set_operation_mode with combined and separated group addresses defined."""
@@ -345,7 +340,7 @@ class TestClimate:
             "TestClimate",
             group_address_operation_mode="1/2/4",
             group_address_operation_mode_protection="1/2/5",
-            group_address_operation_mode_night="1/2/6",
+            group_address_operation_mode_economy="1/2/6",
             group_address_operation_mode_comfort="1/2/7",
         )
 
@@ -371,7 +366,8 @@ class TestClimate:
             ),
         ]
 
-        assert set(telegrams) == set(test_telegrams)
+        for test_item in test_telegrams:
+            assert test_item in telegrams
 
     async def test_set_heat_cool_binary(self):
         """Test set_operation_mode with binary heat/cool group addresses defined."""
@@ -399,6 +395,64 @@ class TestClimate:
             payload=GroupValueWrite(DPTBinary(False)),
         )
 
+    async def test_set_multiple_mode(self):
+        """Test if set operation or controller mode with multiple mode types."""
+
+        xknx = XKNX()
+        climate_mode = ClimateMode(
+            xknx,
+            name=None,
+            group_address_operation_mode="1/2/4",
+            group_address_operation_mode_state="1/2/5",
+            group_address_operation_mode_protection="1/2/6",
+            group_address_operation_mode_economy="1/2/7",
+            group_address_operation_mode_comfort="1/2/8",
+            group_address_operation_mode_standby="1/2/9",
+            group_address_controller_status="1/2/10",
+            group_address_controller_status_state="1/2/11",
+            group_address_controller_mode="1/2/12",
+            group_address_controller_mode_state="1/2/13",
+            group_address_heat_cool="1/2/14",
+            group_address_heat_cool_state="1/2/15",
+        )
+
+        def _process_all_telegrams():
+            """Process all telegrams in the queue in ClimateMode device."""
+            for _ in range(xknx.telegrams.qsize()):
+                telegram = xknx.telegrams.get_nowait()
+                climate_mode.process(telegram)
+
+        # HVACStatus needs to be initialized before it can be sent
+        climate_mode.process(
+            Telegram(
+                destination_address=GroupAddress("1/2/10"),
+                payload=GroupValueWrite(DPTArray((0b10000000,))),
+            )
+        )
+        await climate_mode.set_controller_mode(HVACControllerMode.HEAT)
+        assert xknx.telegrams.qsize() == 3
+        _process_all_telegrams()
+
+        await climate_mode.set_operation_mode(HVACOperationMode.COMFORT)
+        assert xknx.telegrams.qsize() == 6
+        _process_all_telegrams()
+
+        await climate_mode.set_controller_mode(HVACControllerMode.NODEM)
+        assert xknx.telegrams.qsize() == 1  # only supported by controller mode
+        _process_all_telegrams()
+        assert climate_mode.operation_mode == HVACOperationMode.COMFORT
+        assert climate_mode.controller_mode == HVACControllerMode.NODEM
+
+        await climate_mode.set_controller_mode(HVACControllerMode.COOL)
+        assert xknx.telegrams.qsize() == 3
+        _process_all_telegrams()
+
+        await climate_mode.set_operation_mode(HVACOperationMode.ECONOMY)
+        assert xknx.telegrams.qsize() == 6
+        _process_all_telegrams()
+        assert climate_mode.operation_mode == HVACOperationMode.ECONOMY
+        assert climate_mode.controller_mode == HVACControllerMode.COOL
+
     #
     # TEST initialized_for_setpoint_shift_calculations
     #
@@ -406,6 +460,7 @@ class TestClimate:
         """Test initialized_for_setpoint_shift_calculations method."""
         xknx = XKNX()
         climate1 = Climate(xknx, "TestClimate")
+        xknx.devices.async_add(climate1)
         assert not climate1.initialized_for_setpoint_shift_calculations
 
         climate2 = Climate(
@@ -414,9 +469,10 @@ class TestClimate:
             group_address_setpoint_shift="1/2/3",
             setpoint_shift_mode=SetpointShiftMode.DPT6010,
         )
+        xknx.devices.async_add(climate2)
         assert not climate2.initialized_for_setpoint_shift_calculations
         await climate2.set_setpoint_shift(4)
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
         assert not climate2.initialized_for_setpoint_shift_calculations
 
         climate3 = Climate(
@@ -426,12 +482,13 @@ class TestClimate:
             group_address_setpoint_shift="1/2/3",
             setpoint_shift_mode=SetpointShiftMode.DPT6010,
         )
+        xknx.devices.async_add(climate3)
         await climate3.set_setpoint_shift(4)
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
         assert not climate3.initialized_for_setpoint_shift_calculations
 
-        await climate3.target_temperature.set(23.00)
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        climate3.target_temperature.set(23.00)
+        xknx.devices.process(xknx.telegrams.get_nowait())
         assert climate3.initialized_for_setpoint_shift_calculations
 
     async def test_setpoint_shift_mode_autosensing(self):
@@ -455,7 +512,7 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTValue1Count.to_knx(-4)),
         )
-        await climate_dpt6.process(telegram)
+        climate_dpt6.process(telegram)
         assert climate_dpt6.initialized_for_setpoint_shift_calculations
 
         await climate_dpt6.set_setpoint_shift(1)
@@ -483,7 +540,7 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTTemperature.to_knx(-4)),
         )
-        await climate_dpt9.process(telegram)
+        climate_dpt9.process(telegram)
         assert climate_dpt9.initialized_for_setpoint_shift_calculations
 
         await climate_dpt9.set_setpoint_shift(1)
@@ -529,12 +586,14 @@ class TestClimate:
             max_temp="42",
             min_temp="3",
         )
+        xknx.devices.async_add(climate)
+
         await climate.set_setpoint_shift(4)
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
         assert not climate.initialized_for_setpoint_shift_calculations
 
-        await climate.target_temperature.set(23.00)
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        climate.target_temperature.set(23.00)
+        xknx.devices.process(xknx.telegrams.get_nowait())
         assert climate.initialized_for_setpoint_shift_calculations
         assert climate.target_temperature_min == "3"
         assert climate.target_temperature_max == "42"
@@ -553,6 +612,7 @@ class TestClimate:
             group_address_setpoint_shift="1/2/3",
             setpoint_shift_mode=SetpointShiftMode.DPT6010,
         )
+        xknx.devices.async_add(climate)
 
         await climate.set_setpoint_shift(3)
         assert xknx.telegrams.qsize() == 1
@@ -562,16 +622,16 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(30)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
 
-        await climate.target_temperature.set(23.00)
+        climate.target_temperature.set(23.00)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(23.00)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.base_temperature == 20
 
         # First change
@@ -582,13 +642,13 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(40)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         _telegram = xknx.telegrams.get_nowait()
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(24.00)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.target_temperature.value == 24.00
 
         # Second change
@@ -599,13 +659,13 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(35)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         _telegram = xknx.telegrams.get_nowait()
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(23.50)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.target_temperature.value == 23.50
 
         # Test max target temperature
@@ -615,8 +675,8 @@ class TestClimate:
         # third change - limit exceeded, setting to max
         await climate.set_target_temperature(26.50)
         assert xknx.telegrams.qsize() == 2
-        await xknx.devices.process(xknx.telegrams.get_nowait())
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
         assert climate.target_temperature_max == 26.00
         assert climate.setpoint_shift == 6
 
@@ -631,6 +691,7 @@ class TestClimate:
             group_address_setpoint_shift="1/2/3",
             setpoint_shift_mode=SetpointShiftMode.DPT6010,
         )
+        xknx.devices.async_add(climate)
 
         await climate.set_setpoint_shift(1)
         assert xknx.telegrams.qsize() == 1
@@ -640,16 +701,16 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(10)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
 
-        await climate.target_temperature.set(23.00)
+        climate.target_temperature.set(23.00)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(23.00)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.base_temperature == 22.0
 
         # First change
@@ -660,13 +721,13 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(0xF1)),
         )  # -15
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         _telegram = xknx.telegrams.get_nowait()
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(20.50)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.target_temperature.value == 20.50
 
         # Second change
@@ -677,13 +738,13 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(0xE2)),
         )  # -30
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         _telegram = xknx.telegrams.get_nowait()
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(19.00)),
         )
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.target_temperature.value == 19.00
 
         # Test min target temperature
@@ -693,8 +754,8 @@ class TestClimate:
         # third change - limit exceeded, setting to min
         await climate.set_target_temperature(15.50)
         assert xknx.telegrams.qsize() == 2
-        await xknx.devices.process(xknx.telegrams.get_nowait())
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
         assert climate.target_temperature_min == 16.00
         assert climate.setpoint_shift == -6
 
@@ -712,21 +773,22 @@ class TestClimate:
             setpoint_shift_max=10,
             setpoint_shift_min=-10,
         )
+        xknx.devices.async_add(climate)
 
         await climate.set_setpoint_shift(3)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         # temperature_step is 0.5 -> payload = setpoint_shift * 2
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(6)),
         )
 
-        await climate.target_temperature.set(23.00)
+        climate.target_temperature.set(23.00)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(23.00)),
@@ -735,13 +797,13 @@ class TestClimate:
         await climate.set_target_temperature(24.00)
         assert xknx.telegrams.qsize() == 2
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(8)),
         )
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(24.00)),
@@ -768,11 +830,12 @@ class TestClimate:
             group_address_setpoint_shift="1/2/3",
             setpoint_shift_mode=SetpointShiftMode.DPT6010,
         )
+        xknx.devices.async_add(climate)
 
         await climate.set_target_temperature(21.00)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPT2ByteFloat().to_knx(21.00)),
@@ -784,7 +847,7 @@ class TestClimate:
         await climate.set_setpoint_shift(1)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         # DEFAULT_TEMPERATURE_STEP is 0.1 -> payload = setpoint_shift * 10
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/3"),
@@ -798,14 +861,14 @@ class TestClimate:
         # setpoint_shift and target_temperature are sent to the bus
         assert xknx.telegrams.qsize() == 2
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         # DEFAULT_TEMPERATURE_STEP is 0.1 -> payload = setpoint_shift * 10
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray(20)),
         )
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.initialized_for_setpoint_shift_calculations
         assert climate.base_temperature == 20.00
         assert climate.target_temperature.value == 22
@@ -823,9 +886,10 @@ class TestClimate:
             setpoint_shift_max=10,
             setpoint_shift_min=-10,
         )
+        xknx.devices.async_add(climate)
 
         # base temperature is 20 °C
-        await climate.target_temperature.process(
+        climate.target_temperature.process(
             Telegram(
                 destination_address=GroupAddress("1/2/2"),
                 payload=GroupValueWrite(DPT2ByteFloat().to_knx(20.00)),
@@ -834,7 +898,7 @@ class TestClimate:
         await climate.set_setpoint_shift(0)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.initialized_for_setpoint_shift_calculations
         assert climate.base_temperature == 20.00
         assert _telegram == Telegram(
@@ -845,13 +909,13 @@ class TestClimate:
         await climate.set_target_temperature(19.40)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray((0x87, 0xC4))),
         )  # -0.6
         # simulate incoming new target temperature for next calculation
-        await climate.target_temperature.process(
+        climate.target_temperature.process(
             Telegram(
                 destination_address=GroupAddress("1/2/2"),
                 payload=GroupValueWrite(DPT2ByteFloat().to_knx(19.40)),
@@ -861,7 +925,7 @@ class TestClimate:
         await climate.set_target_temperature(23.50)
         assert xknx.telegrams.qsize() == 1
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTArray((0x01, 0x5E))),
@@ -978,8 +1042,8 @@ class TestClimate:
         telegrams = [xknx.telegrams.get_nowait() for _ in range(3)]
         assert telegrams == [
             Telegram(GroupAddress("1/2/5"), payload=GroupValueRead()),
-            Telegram(GroupAddress("1/2/6"), payload=GroupValueRead()),
             Telegram(GroupAddress("1/2/14"), payload=GroupValueRead()),
+            Telegram(GroupAddress("1/2/6"), payload=GroupValueRead()),
         ]
 
     async def test_sync_heat_cool(self):
@@ -1021,7 +1085,7 @@ class TestClimate:
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTTemperature().to_knx(21.34)),
         )
-        await climate.process(telegram)
+        climate.process(telegram)
         assert climate.temperature.value == 21.34
 
     async def test_process_operation_mode(self):
@@ -1038,16 +1102,26 @@ class TestClimate:
                 destination_address=GroupAddress("1/2/5"),
                 payload=GroupValueWrite(DPTHVACMode.to_knx(operation_mode)),
             )
-            await climate_mode.process(telegram)
+            climate_mode.process(telegram)
             assert climate_mode.operation_mode == operation_mode
         for operation_mode in DPT_20102_MODES:
             if operation_mode == HVACOperationMode.AUTO:
                 continue
             telegram = Telegram(
                 destination_address=GroupAddress("1/2/3"),
-                payload=GroupValueWrite(DPTControllerStatus.to_knx(operation_mode)),
+                payload=GroupValueWrite(
+                    DPTHVACStatus.to_knx(
+                        HVACStatus(
+                            mode=operation_mode,
+                            dew_point=False,
+                            heat_cool=HVACControllerMode.HEAT,
+                            inactive=False,
+                            frost_alarm=False,
+                        )
+                    )
+                ),
             )
-            await climate_mode.process(telegram)
+            climate_mode.process(telegram)
             assert climate_mode.operation_mode == operation_mode
 
     async def test_process_controller_mode(self):
@@ -1056,18 +1130,18 @@ class TestClimate:
         climate_mode = ClimateMode(
             xknx, "TestClimate", group_address_controller_mode="1/2/5"
         )
-        for _, controller_mode in DPTHVACContrMode.SUPPORTED_MODES.items():
+        for controller_mode in DPTHVACContrMode.get_valid_values():
             telegram = Telegram(
                 destination_address=GroupAddress("1/2/5"),
                 payload=GroupValueWrite(DPTHVACContrMode.to_knx(controller_mode)),
             )
-            await climate_mode.process(telegram)
+            climate_mode.process(telegram)
             assert climate_mode.controller_mode == controller_mode
 
     async def test_process_controller_status_wrong_payload(self):
         """Test process wrong telegram for controller status (wrong payload type)."""
         xknx = XKNX()
-        updated_cb = AsyncMock()
+        updated_cb = Mock()
         climate_mode = ClimateMode(
             xknx,
             "TestClimate",
@@ -1080,14 +1154,14 @@ class TestClimate:
             payload=GroupValueWrite(DPTBinary(1)),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await climate_mode.process(telegram)
+            climate_mode.process(telegram)
             log_mock.assert_called_once()
             updated_cb.assert_not_called()
 
     async def test_process_controller_status_payload_invalid_length(self):
         """Test process wrong telegram for controller status (wrong payload length)."""
         xknx = XKNX()
-        updated_cb = AsyncMock()
+        updated_cb = Mock()
         climate_mode = ClimateMode(
             xknx,
             "TestClimate",
@@ -1100,14 +1174,14 @@ class TestClimate:
             payload=GroupValueWrite(DPTArray((23, 24))),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await climate_mode.process(telegram)
+            climate_mode.process(telegram)
             log_mock.assert_called_once()
             updated_cb.assert_not_called()
 
     async def test_process_operation_mode_wrong_payload(self):
         """Test process wrong telegram for operation mode (wrong payload type)."""
         xknx = XKNX()
-        updated_cb = AsyncMock()
+        updated_cb = Mock()
         climate_mode = ClimateMode(
             xknx,
             "TestClimate",
@@ -1120,14 +1194,14 @@ class TestClimate:
             payload=GroupValueWrite(DPTBinary(1)),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await climate_mode.process(telegram)
+            climate_mode.process(telegram)
             log_mock.assert_called_once()
             updated_cb.assert_not_called()
 
     async def test_process_operation_mode_payload_invalid_length(self):
         """Test process wrong telegram for operation mode (wrong payload length)."""
         xknx = XKNX()
-        updated_cb = AsyncMock()
+        updated_cb = Mock()
         climate_mode = ClimateMode(
             xknx,
             "TestClimate",
@@ -1140,7 +1214,7 @@ class TestClimate:
             payload=GroupValueWrite(DPTArray((23, 24))),
         )
         with patch("logging.Logger.warning") as log_mock:
-            await climate_mode.process(telegram)
+            climate_mode.process(telegram)
             log_mock.assert_called_once()
             updated_cb.assert_not_called()
 
@@ -1149,14 +1223,14 @@ class TestClimate:
 
         xknx = XKNX()
         climate = Climate(xknx, "TestClimate", group_address_temperature="1/2/3")
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         climate.register_device_updated_cb(after_update_callback)
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/3"),
             payload=GroupValueWrite(DPTTemperature().to_knx(21.34)),
         )
-        await climate.process(telegram)
+        climate.process(telegram)
         after_update_callback.assert_called_with(climate)
 
     async def test_process_heat_cool(self):
@@ -1174,14 +1248,14 @@ class TestClimate:
             destination_address=GroupAddress("1/2/14"),
             payload=GroupValueWrite(DPTBinary(False)),
         )
-        await climate_mode.process(telegram)
+        climate_mode.process(telegram)
         assert climate_mode.controller_mode == HVACControllerMode.COOL
 
         telegram = Telegram(
             destination_address=GroupAddress("1/2/14"),
             payload=GroupValueWrite(DPTBinary(True)),
         )
-        await climate_mode.process(telegram)
+        climate_mode.process(telegram)
         assert climate_mode.controller_mode == HVACControllerMode.HEAT
 
     #
@@ -1197,12 +1271,12 @@ class TestClimate:
             HVACOperationMode.AUTO,
             HVACOperationMode.COMFORT,
             HVACOperationMode.STANDBY,
-            HVACOperationMode.NIGHT,
-            HVACOperationMode.FROST_PROTECTION,
+            HVACOperationMode.ECONOMY,
+            HVACOperationMode.BUILDING_PROTECTION,
         }
 
-    def test_supported_operation_modes_controller_status(self):
-        """Test get_supported_operation_modes with combined group address."""
+    def test_supported_modes_controller_status(self):
+        """Test supported modes with HVAC status group address."""
         xknx = XKNX()
         climate_mode = ClimateMode(
             xknx, "TestClimate", group_address_controller_status="1/2/5"
@@ -1210,8 +1284,12 @@ class TestClimate:
         assert set(climate_mode.operation_modes) == {
             HVACOperationMode.COMFORT,
             HVACOperationMode.STANDBY,
-            HVACOperationMode.NIGHT,
-            HVACOperationMode.FROST_PROTECTION,
+            HVACOperationMode.ECONOMY,
+            HVACOperationMode.BUILDING_PROTECTION,
+        }
+        assert set(climate_mode.controller_modes) == {
+            HVACControllerMode.HEAT,
+            HVACControllerMode.COOL,
         }
 
     def test_supported_operation_modes_no_mode(self):
@@ -1227,33 +1305,32 @@ class TestClimate:
             xknx,
             "TestClimate",
             group_address_operation_mode_protection="1/2/5",
-            group_address_operation_mode_night="1/2/6",
+            group_address_operation_mode_economy="1/2/6",
             group_address_operation_mode_comfort="1/2/7",
         )
 
         assert set(climate_mode.operation_modes) == {
             HVACOperationMode.COMFORT,
+            HVACOperationMode.ECONOMY,
+            HVACOperationMode.BUILDING_PROTECTION,
             HVACOperationMode.STANDBY,
-            HVACOperationMode.NIGHT,
-            HVACOperationMode.FROST_PROTECTION,
         }
 
-    def test_supported_operation_modes_only_night(self):
-        """Test get_supported_operation_modes with only night mode supported."""
+    def test_supported_operation_modes_only_economy(self):
+        """Test get_supported_operation_modes with only economy mode supported."""
         xknx = XKNX()
         climate_mode = ClimateMode(
-            xknx, "TestClimate", group_address_operation_mode_night="1/2/7"
+            xknx, "TestClimate", group_address_operation_mode_economy="1/2/7"
         )
-        # If one binary climate object is set, all 4 operation modes are supported.
+        # If one binary climate object is set, this mode and Standby are supported.
+        # All binary modes off -> Standby according to MDT heating actuator
         assert set(climate_mode.operation_modes) == {
+            HVACOperationMode.ECONOMY,
             HVACOperationMode.STANDBY,
-            HVACOperationMode.NIGHT,
-            HVACOperationMode.COMFORT,
-            HVACOperationMode.FROST_PROTECTION,
         }
 
     def test_supported_operation_modes_heat_cool(self):
-        """Test get_supported_operation_modes with heat_cool group address."""
+        """Test supported controller_modes with heat_cool address."""
         xknx = XKNX()
         climate_mode = ClimateMode(
             xknx,
@@ -1261,14 +1338,30 @@ class TestClimate:
             group_address_heat_cool="1/2/14",
             group_address_heat_cool_state="1/2/15",
         )
+        assert climate_mode.supports_controller_mode
         assert set(climate_mode.controller_modes) == {
+            HVACControllerMode.HEAT,
+            HVACControllerMode.COOL,
+        }
+
+    def test_supported_operation_modes_heat_cool_read_only(self):
+        """Test supported controller_modes with heat_cool_state address."""
+        xknx = XKNX()
+        climate_mode = ClimateMode(
+            xknx,
+            "TestClimate",
+            group_address_heat_cool_state="1/2/15",
+        )
+        assert climate_mode.supports_controller_mode
+        assert climate_mode.controller_modes == []  # only writable modes
+        assert set(climate_mode.gather_controller_modes(only_writable=False)) == {
             HVACControllerMode.HEAT,
             HVACControllerMode.COOL,
         }
 
     def test_custom_supported_operation_modes(self):
         """Test get_supported_operation_modes with custom mode."""
-        modes = [HVACOperationMode.STANDBY, HVACOperationMode.NIGHT]
+        modes = [HVACOperationMode.STANDBY, HVACOperationMode.ECONOMY]
         xknx = XKNX()
         climate_mode = ClimateMode(
             xknx,
@@ -1280,13 +1373,31 @@ class TestClimate:
 
     def test_custom_supported_operation_modes_as_str(self):
         """Test get_supported_operation_modes with custom mode as str list."""
-        str_modes = ["Standby", "Frost Protection"]
-        modes = [HVACOperationMode.STANDBY, HVACOperationMode.FROST_PROTECTION]
+        str_modes = ["Standby", "Building Protection"]
+        modes = [HVACOperationMode.STANDBY, HVACOperationMode.BUILDING_PROTECTION]
         xknx = XKNX()
         climate_mode = ClimateMode(
             xknx,
             "TestClimate",
             group_address_operation_mode="1/2/7",
+            operation_modes=str_modes,
+        )
+        assert climate_mode.operation_modes == modes
+
+    def test_custom_supported_operation_modes_only_valid(self):
+        """Test get_supported_operation_modes with custom mode as str list."""
+        str_modes = [
+            "Standby",
+            "Building Protection",
+            "Comfort",  # Comfort can't be set - no address set
+        ]
+        modes = [HVACOperationMode.STANDBY, HVACOperationMode.BUILDING_PROTECTION]
+        xknx = XKNX()
+        climate_mode = ClimateMode(
+            xknx,
+            "TestClimate",
+            group_address_operation_mode_standby="1/2/7",
+            group_address_operation_mode_protection="1/2/8",
             operation_modes=str_modes,
         )
         assert climate_mode.operation_modes == modes
@@ -1328,7 +1439,7 @@ class TestClimate:
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPTBinary(1)),
         )
-        await climate.process(telegram)
+        climate.process(telegram)
         assert climate.is_on is True
 
         climate_inv = Climate(
@@ -1338,16 +1449,18 @@ class TestClimate:
             destination_address=GroupAddress("1/2/2"),
             payload=GroupValueWrite(DPTBinary(1)),
         )
-        await climate_inv.process(telegram)
+        climate_inv.process(telegram)
         assert climate_inv.is_on is False
 
     async def test_power_on_off(self):
         """Test turn_on and turn_off functions."""
         xknx = XKNX()
         climate = Climate(xknx, "TestClimate", group_address_on_off="1/2/2")
+        xknx.devices.async_add(climate)
+
         await climate.turn_on()
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.is_on is True
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
@@ -1355,7 +1468,7 @@ class TestClimate:
         )
         await climate.turn_off()
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate.is_on is False
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
@@ -1365,9 +1478,11 @@ class TestClimate:
         climate_inv = Climate(
             xknx, "TestClimate", group_address_on_off="1/2/2", on_off_invert=True
         )
+        xknx.devices.async_add(climate_inv)
+
         await climate_inv.turn_on()
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate_inv.is_on is True
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
@@ -1375,7 +1490,7 @@ class TestClimate:
         )
         await climate_inv.turn_off()
         _telegram = xknx.telegrams.get_nowait()
-        await xknx.devices.process(_telegram)
+        xknx.devices.process(_telegram)
         assert climate_inv.is_on is False
         assert _telegram == Telegram(
             destination_address=GroupAddress("1/2/2"),
@@ -1388,20 +1503,24 @@ class TestClimate:
         climate_active = Climate(
             xknx, "TestClimate1", group_address_active_state="1/1/1"
         )
+        xknx.devices.async_add(climate_active)
         climate_command = Climate(
             xknx, "TestClimate2", group_address_command_value_state="2/2/2"
         )
+        xknx.devices.async_add(climate_command)
         climate_active_command = Climate(
             xknx,
             "TestClimate3",
             group_address_active_state="1/1/1",
             group_address_command_value_state="2/2/2",
         )
+        xknx.devices.async_add(climate_active_command)
+
         assert climate_active.is_active is None
         assert climate_command.is_active is None
         assert climate_active_command.is_active is None
         # set active to False
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/1"),
                 payload=GroupValueWrite(DPTBinary(False)),
@@ -1411,7 +1530,7 @@ class TestClimate:
         assert climate_command.is_active is None
         assert climate_active_command.is_active is False
         # set command to 50%
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("2/2/2"),
                 payload=GroupValueWrite(DPTArray((128,))),
@@ -1421,7 +1540,7 @@ class TestClimate:
         assert climate_command.is_active is True
         assert climate_active_command.is_active is False
         # set active to True
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("1/1/1"),
                 payload=GroupValueWrite(DPTBinary(True)),
@@ -1431,7 +1550,7 @@ class TestClimate:
         assert climate_command.is_active is True
         assert climate_active_command.is_active is True
         # set command to 0%
-        await xknx.devices.process(
+        xknx.devices.process(
             Telegram(
                 destination_address=GroupAddress("2/2/2"),
                 payload=GroupValueWrite(DPTArray((0,))),
@@ -1443,3 +1562,77 @@ class TestClimate:
         # only command initialized
         climate_active_command.active.value = None
         assert climate_active_command.is_active is False
+
+    async def test_fan_speed(self):
+        """Test fan speed functionality."""
+        xknx = XKNX()
+        climate_step = Climate(
+            xknx,
+            name="TestClimate",
+            group_address_fan_speed="1/2/3",
+            group_address_fan_speed_state="1/2/4",
+            fan_max_step=3,
+        )
+        xknx.devices.async_add(climate_step)
+        climate_percent = Climate(
+            xknx,
+            name="TestClimate",
+            group_address_fan_speed="1/2/5",
+            group_address_fan_speed_state="1/2/6",
+        )
+        xknx.devices.async_add(climate_percent)
+
+        # Test initial state
+        assert climate_step.current_fan_speed is None
+        assert climate_percent.current_fan_speed is None
+
+        xknx.devices.process(
+            Telegram(
+                destination_address=GroupAddress("1/2/3"),
+                payload=GroupValueWrite(DPTArray(2)),
+            )
+        )
+        assert climate_step.current_fan_speed == 2
+
+        # 140 is 55% as byte (0...255)
+        xknx.devices.process(
+            Telegram(
+                destination_address=GroupAddress("1/2/5"),
+                payload=GroupValueWrite(DPTArray(140)),
+            )
+        )
+        assert climate_percent.current_fan_speed == 55
+
+        await climate_step.set_fan_speed(3)
+        assert xknx.telegrams.qsize() == 1
+        telegram = xknx.telegrams.get_nowait()
+        assert telegram == Telegram(
+            destination_address=GroupAddress("1/2/3"),
+            payload=GroupValueWrite(DPTArray(3)),
+        )
+
+        await climate_percent.set_fan_speed(45)
+        assert xknx.telegrams.qsize() == 1
+        telegram = xknx.telegrams.get_nowait()
+        # 115 is 45% as byte (0...255)
+        assert telegram == Telegram(
+            destination_address=GroupAddress("1/2/5"),
+            payload=GroupValueWrite(DPTArray(115)),
+        )
+
+        xknx.devices.process(
+            Telegram(
+                destination_address=GroupAddress("1/2/4"),
+                payload=GroupValueWrite(DPTArray(2)),
+            )
+        )
+        assert climate_step.current_fan_speed == 2
+
+        # 140 is 55% as byte (0...255)
+        xknx.devices.process(
+            Telegram(
+                destination_address=GroupAddress("1/2/6"),
+                payload=GroupValueWrite(DPTArray(140)),
+            )
+        )
+        assert climate_percent.current_fan_speed == 55

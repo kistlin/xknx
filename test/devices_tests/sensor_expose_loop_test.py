@@ -1,5 +1,6 @@
 """Unit test for Sensor and ExposeSensor objects."""
-from unittest.mock import AsyncMock, call
+
+from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
@@ -94,7 +95,7 @@ class TestSensorExposeLoop:
         ("percent", DPTArray((0xE3,)), 89),
         ("percentU8", DPTArray((0x6B,)), 107),
         ("percentV8", DPTArray((0x20,)), 32),
-        ("percentV16", DPTArray((0x8A, 0x2F)), -30161),
+        ("percentV16", DPTArray((0x8A, 0x2F)), -301.61),
         ("phaseanglerad", DPTArray((0x45, 0x54, 0xAC, 0x2D)), 3402.761),
         ("phaseangledeg", DPTArray((0xC5, 0x25, 0x13, 0x37)), -2641.201),
         ("power", DPTArray((0x45, 0xCB, 0xE2, 0x5C)), 6524.295),
@@ -152,8 +153,8 @@ class TestSensorExposeLoop:
         ("thermoelectric_power", DPTArray((0x41, 0xCF, 0x9E, 0x4F)), 25.9523),
         ("time_1", DPTArray((0x5E, 0x1E)), 32071.68),
         ("time_2", DPTArray((0xFB, 0x29)), -405995.52),
-        ("time_period_100msec", DPTArray((0x6A, 0x35)), 27189),
-        ("time_period_10msec", DPTArray((0x32, 0x3)), 12803),
+        ("time_period_100msec", DPTArray((0x6A, 0x35)), 2718900),
+        ("time_period_10msec", DPTArray((0x32, 0x3)), 128030),
         ("time_period_hrs", DPTArray((0x29, 0xDE)), 10718),
         ("time_period_min", DPTArray((0x0, 0x54)), 84),
         ("time_period_msec", DPTArray((0x93, 0xC7)), 37831),
@@ -191,6 +192,7 @@ class TestSensorExposeLoop:
             group_address="1/1/1",
             value_type=value_type,
         )
+        xknx.devices.async_add(expose)
         assert expose.resolve_state() is None
         # set a value from expose - HA sends strings for new values
         stringified_value = str(test_value)
@@ -212,6 +214,7 @@ class TestSensorExposeLoop:
             group_address_state="1/1/1",
             value_type=value_type,
         )
+        xknx.devices.async_add(sensor)
         assert sensor.resolve_state() is None
 
         # read sensor state (from expose as it has the same GA)
@@ -261,6 +264,7 @@ class TestBinarySensorExposeLoop:
             group_address="1/1/1",
             value_type=value_type,
         )
+        xknx.devices.async_add(expose)
         assert expose.resolve_state() is None
 
         await expose.set(test_value)
@@ -273,7 +277,12 @@ class TestBinarySensorExposeLoop:
         xknx.cemi_handler.send_telegram.assert_called_with(outgoing_telegram)
         assert expose.resolve_state() == test_value
 
-        bin_sensor = BinarySensor(xknx, "TestSensor", group_address_state="1/1/1")
+        bin_sensor = BinarySensor(
+            xknx,
+            "TestSensor",
+            group_address_state="1/1/1",
+        )
+        xknx.devices.async_add(bin_sensor)
         assert bin_sensor.state is None
 
         # read sensor state (from expose as it has the same GA)
@@ -316,7 +325,7 @@ class TestBinarySensorInternalGroupAddressExposeLoop:
         xknx = XKNX()
         xknx.cemi_handler = AsyncMock()
 
-        telegram_callback = AsyncMock()
+        telegram_callback = Mock()
         xknx.telegram_queue.register_telegram_received_cb(
             telegram_callback,
             address_filters=[AddressFilter("i-test")],
@@ -330,6 +339,7 @@ class TestBinarySensorInternalGroupAddressExposeLoop:
             group_address="i-test",
             value_type=value_type,
         )
+        xknx.devices.async_add(expose)
         assert expose.resolve_state() is None
 
         await expose.set(test_value)
@@ -344,7 +354,12 @@ class TestBinarySensorInternalGroupAddressExposeLoop:
         telegram_callback.assert_called_with(outgoing_telegram)
         assert expose.resolve_state() == test_value
 
-        bin_sensor = BinarySensor(xknx, "TestSensor", group_address_state="i-test")
+        bin_sensor = BinarySensor(
+            xknx,
+            "TestSensor",
+            group_address_state="i-test",
+        )
+        xknx.devices.async_add(bin_sensor)
         assert bin_sensor.state is None
 
         # read sensor state (from expose as it has the same GA)

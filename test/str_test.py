@@ -1,4 +1,5 @@
 """Unit test for String representations."""
+
 from unittest.mock import patch
 
 from xknx import XKNX
@@ -14,7 +15,7 @@ from xknx.devices import (
     Climate,
     ClimateMode,
     Cover,
-    DateTime,
+    DateTimeDevice,
     ExposeSensor,
     Fan,
     Light,
@@ -88,6 +89,7 @@ class TestStringRepresentations:
             == '<RemoteValue device_name="MyDevice" feature_name="Unknown" <1/2/3, 1/2/4, [], None /> />'
         )
 
+        remote_value.to_knx = lambda value: value  # to bypass NotImplementedError
         remote_value.value = 34
         assert (
             str(remote_value)
@@ -129,6 +131,8 @@ class TestStringRepresentations:
             setpoint_shift_min=-20,
             group_address_on_off="1/2/14",
             group_address_on_off_state="1/2/15",
+            group_address_fan_speed="1/2/16",
+            group_address_fan_speed_state="1/2/17",
         )
         assert (
             str(climate) == '<Climate name="Wohnzimmer" '
@@ -137,7 +141,8 @@ class TestStringRepresentations:
             'temperature_step="0.1" '
             "setpoint_shift=<1/2/3, 1/2/4, [], None /> "
             'setpoint_shift_max="20" setpoint_shift_min="-20" '
-            "group_address_on_off=<1/2/14, 1/2/15, [], None /> />"
+            "group_address_on_off=<1/2/14, 1/2/15, [], None /> "
+            "group_address_fan_speed=<1/2/16, 1/2/17, [], None /> />"
         )
 
     def test_climate_mode(self):
@@ -149,7 +154,7 @@ class TestStringRepresentations:
             group_address_operation_mode="1/2/5",
             group_address_operation_mode_state="1/2/6",
             group_address_operation_mode_protection="1/2/7",
-            group_address_operation_mode_night="1/2/8",
+            group_address_operation_mode_economy="1/2/8",
             group_address_operation_mode_comfort="1/2/9",
             group_address_controller_status="1/2/10",
             group_address_controller_status_state="1/2/11",
@@ -265,7 +270,7 @@ class TestStringRepresentations:
             == '<Notification name="Alarm" message=<1/2/3, 1/2/4, [], None /> />'
         )
         await notification.set("Einbrecher im Haus")
-        await notification.process(xknx.telegrams.get_nowait())
+        notification.process(xknx.telegrams.get_nowait())
         assert (
             str(notification) == '<Notification name="Alarm" '
             "message=<1/2/3, 1/2/4, [], 'Einbrecher im ' /> />"
@@ -296,7 +301,7 @@ class TestStringRepresentations:
             direction=TelegramDirection.INCOMING,
             payload=GroupValueWrite(DPTArray(0x40)),
         )
-        await sensor.process_group_write(telegram)
+        sensor.process_group_write(telegram)
         assert (
             str(sensor)
             == '<Sensor name="MeinSensor" sensor=<None, 1/2/3, [], 25 /> value=25 unit="%"/>'
@@ -313,7 +318,7 @@ class TestStringRepresentations:
             == '<ExposeSensor name="MeinSensor" sensor=<1/2/3, None, [], None /> value=None unit="%"/>'
         )
         await sensor.set(25)
-        await sensor.process(xknx.telegrams.get_nowait())
+        sensor.process(xknx.telegrams.get_nowait())
         assert (
             str(sensor)
             == '<ExposeSensor name="MeinSensor" sensor=<1/2/3, None, [], 25 /> value=25 unit="%"/>'
@@ -366,7 +371,7 @@ class TestStringRepresentations:
             direction=TelegramDirection.INCOMING,
             payload=GroupValueWrite(DPTBinary(1)),
         )
-        await weather.process_group_write(telegram)
+        weather.process_group_write(telegram)
 
         assert (
             str(weather)
@@ -383,10 +388,12 @@ class TestStringRepresentations:
     def test_datetime(self):
         """Test string representation of datetime object."""
         xknx = XKNX()
-        date_time = DateTime(xknx, name="Zeit", group_address="1/2/3", localtime=False)
+        date_time = DateTimeDevice(
+            xknx, name="Zeit", group_address="1/2/3", localtime=False
+        )
         assert (
             str(date_time)
-            == '<DateTime name="Zeit" remote_value=<1/2/3, None, [], None /> broadcast_type="TIME" />'
+            == '<DateTimeDevice name="Zeit" remote_value=<1/2/3, None, [], None /> />'
         )
 
     def test_could_not_parse_telegramn_exception(self):

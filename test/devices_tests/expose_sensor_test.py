@@ -1,5 +1,6 @@
 """Unit test for Sensor objects."""
-from unittest.mock import AsyncMock, call
+
+from unittest.mock import AsyncMock, Mock, call
 
 from xknx import XKNX
 from xknx.devices import ExposeSensor
@@ -20,7 +21,7 @@ class TestExposeSensor:
         expose_sensor = ExposeSensor(
             xknx, "TestSensor", group_address="1/2/3", value_type="binary"
         )
-        await expose_sensor.process(
+        expose_sensor.process(
             Telegram(
                 destination_address=GroupAddress("1/2/3"),
                 payload=GroupValueWrite(value=DPTBinary(1)),
@@ -37,7 +38,7 @@ class TestExposeSensor:
             xknx, "TestSensor", group_address="1/2/3", value_type="percent"
         )
 
-        await expose_sensor.process(
+        expose_sensor.process(
             Telegram(
                 destination_address=GroupAddress("1/2/3"),
                 payload=GroupValueWrite(DPTArray((0x40,))),
@@ -54,7 +55,7 @@ class TestExposeSensor:
             xknx, "TestSensor", group_address="1/2/3", value_type="temperature"
         )
 
-        await expose_sensor.process(
+        expose_sensor.process(
             Telegram(
                 destination_address=GroupAddress("1/2/3"),
                 payload=GroupValueWrite(DPTArray((0x0C, 0x1A))),
@@ -122,7 +123,7 @@ class TestExposeSensor:
         expose_sensor.sensor_value.value = True
 
         telegram = Telegram(GroupAddress("1/2/3"), payload=GroupValueRead())
-        await expose_sensor.process(telegram)
+        expose_sensor.process(telegram)
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
         assert telegram == Telegram(
@@ -137,7 +138,7 @@ class TestExposeSensor:
             xknx, "TestSensor", value_type="percent", group_address="1/2/3"
         )
 
-        await expose_sensor.process(
+        expose_sensor.process(
             Telegram(
                 destination_address=GroupAddress("1/2/3"),
                 payload=GroupValueWrite(DPTArray((0x40,))),
@@ -145,7 +146,7 @@ class TestExposeSensor:
         )
 
         telegram = Telegram(GroupAddress("1/2/3"), payload=GroupValueRead())
-        await expose_sensor.process(telegram)
+        expose_sensor.process(telegram)
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
         assert telegram == Telegram(
@@ -162,7 +163,7 @@ class TestExposeSensor:
         expose_sensor.sensor_value.value = 21.0
 
         telegram = Telegram(GroupAddress("1/2/3"), payload=GroupValueRead())
-        await expose_sensor.process(telegram)
+        expose_sensor.process(telegram)
         assert xknx.telegrams.qsize() == 1
         telegram = xknx.telegrams.get_nowait()
         assert telegram == Telegram(
@@ -183,7 +184,7 @@ class TestExposeSensor:
         expose_sensor.sensor_value.value = 21.0
 
         telegram = Telegram(GroupAddress("1/2/3"), payload=GroupValueRead())
-        await expose_sensor.process(telegram)
+        expose_sensor.process(telegram)
         assert xknx.telegrams.qsize() == 0
 
     #
@@ -205,14 +206,15 @@ class TestExposeSensor:
         """Test setting value. Test if callback is called."""
 
         xknx = XKNX()
-        after_update_callback = AsyncMock()
+        after_update_callback = Mock()
         expose_sensor = ExposeSensor(
             xknx, "TestSensor", group_address="1/2/3", value_type="temperature"
         )
         expose_sensor.register_device_updated_cb(after_update_callback)
+        xknx.devices.async_add(expose_sensor)
 
         await expose_sensor.set(21.0)
-        await xknx.devices.process(xknx.telegrams.get_nowait())
+        xknx.devices.process(xknx.telegrams.get_nowait())
         after_update_callback.assert_called_with(expose_sensor)
 
     #
@@ -231,12 +233,14 @@ class TestExposeSensor:
             value_type="temperature",
             cooldown=10,
         )
+        xknx.devices.async_add(expose_sensor_cd)
         expose_sensor_no_cd = ExposeSensor(
             xknx,
             "TestSensor",
             group_address="1/2/4",
             value_type="temperature",
         )
+        xknx.devices.async_add(expose_sensor_no_cd)
 
         await expose_sensor_cd.set(21.0)
         await expose_sensor_no_cd.set(21.0)
@@ -351,7 +355,7 @@ class TestExposeSensor:
         xknx.cemi_handler.send_telegram.reset_mock()
         #   in cooldown with a new value - receiving a read request
         await expose_sensor_cd.set(21)
-        await expose_sensor_cd.process(
+        expose_sensor_cd.process(
             Telegram(GroupAddress("1/2/3"), payload=GroupValueRead())
         )
         await time_travel(0)

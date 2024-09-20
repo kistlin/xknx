@@ -1,12 +1,12 @@
 """
-This package contains all objects managing Tunneling and Routing Connections..
+Package containing all objects managing Tunneling and Routing Connections..
 
 - KNXIPInterface is the overall managing class.
 - GatewayScanner searches for available KNX/IP devices in the local network.
 - Routing uses UDP/Multicast to communicate with KNX/IP device.
 - Tunnel uses UDP packets and builds a static tunnel with KNX/IP device.
 """
-# flake8: noqa
+
 from .connection import (
     ConnectionConfig,
     ConnectionConfigUSB,
@@ -21,10 +21,12 @@ from .self_description import DescriptionQuery
 from .tunnel import TCPTunnel, UDPTunnel
 
 __all__ = [
+    "knx_interface_factory",
     "DEFAULT_MCAST_GRP",
     "DEFAULT_MCAST_PORT",
     "DescriptionQuery",
     "GatewayScanFilter",
+    "GatewayDescriptor",
     "GatewayScanner",
     "ConnectionConfig",
     "ConnectionConfigUSB",

@@ -3,69 +3,30 @@ Module for managing a remote date and time values.
 
 DPT 10.001, 11.001 and 19.001
 """
+
 from __future__ import annotations
 
-from enum import Enum
-import time
-from typing import TYPE_CHECKING
+from xknx.dpt import DPTDate, DPTDateTime, DPTTime
+from xknx.dpt.dpt_10 import KNXTime
+from xknx.dpt.dpt_11 import KNXDate
+from xknx.dpt.dpt_19 import KNXDateTime
 
-from xknx.dpt import DPTArray, DPTBinary, DPTDate, DPTDateTime, DPTTime
-from xknx.exceptions import ConversionError
-
-from .remote_value import AsyncCallbackType, GroupAddressesType, RemoteValue
-
-if TYPE_CHECKING:
-    from xknx.xknx import XKNX
+from .remote_value import RemoteValue
 
 
-class DateTimeType(Enum):
-    """Enum class for the date or time value type."""
+class RemoteValueTime(RemoteValue[KNXTime]):
+    """Abstraction for remote value of KNX 3 octet time."""
 
-    DATETIME = DPTDateTime
-    DATE = DPTDate
-    TIME = DPTTime
+    dpt_class = DPTTime
 
 
-class RemoteValueDateTime(RemoteValue[time.struct_time]):
-    """Abstraction for remote value of KNX 10.001, 11.001 and 19.001 time and date objects."""
+class RemoteValueDate(RemoteValue[KNXDate]):
+    """Abstraction for remote value of KNX 3 octet date."""
 
-    def __init__(
-        self,
-        xknx: XKNX,
-        group_address: GroupAddressesType | None = None,
-        group_address_state: GroupAddressesType | None = None,
-        sync_state: bool | int | float | str = True,
-        value_type: str = "time",
-        device_name: str | None = None,
-        feature_name: str = "DateTime",
-        after_update_cb: AsyncCallbackType | None = None,
-    ):
-        """Initialize RemoteValueDateTime class."""
-        try:
-            self.dpt_class: type[DPTDate | DPTDateTime | DPTTime] = DateTimeType[
-                value_type.upper()
-            ].value
-        except KeyError:
-            raise ConversionError(
-                "invalid datetime value type",
-                value_type=value_type,
-                device_name=device_name,
-                feature_name=feature_name,
-            )
-        super().__init__(
-            xknx,
-            group_address,
-            group_address_state,
-            sync_state=sync_state,
-            device_name=device_name,
-            feature_name=feature_name,
-            after_update_cb=after_update_cb,
-        )
+    dpt_class = DPTDate
 
-    def to_knx(self, value: time.struct_time) -> DPTArray:
-        """Convert value to payload."""
-        return self.dpt_class.to_knx(value)
 
-    def from_knx(self, payload: DPTArray | DPTBinary) -> time.struct_time:
-        """Convert current payload to value."""
-        return self.dpt_class.from_knx(payload)
+class RemoteValueDateTime(RemoteValue[KNXDateTime]):
+    """Abstraction for remote value of KNX 8 octet datetime."""
+
+    dpt_class = DPTDateTime

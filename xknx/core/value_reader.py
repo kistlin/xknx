@@ -7,6 +7,7 @@ The module will
 * ... check if received telegrams have the correct group address.
 * ... store the received telegram for further processing.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,7 +48,7 @@ class ValueReader:
             group_addresses=[self.group_address],
             match_for_outgoing=True,
         )
-        await self.send_group_read()
+        self.send_group_read()
 
         try:
             async with asyncio_timeout(self.timeout_in_seconds):
@@ -66,19 +67,19 @@ class ValueReader:
 
         return None
 
-    async def send_group_read(self) -> None:
+    def send_group_read(self) -> None:
         """Send group read."""
         telegram = Telegram(
             destination_address=self.group_address,
             payload=GroupValueRead(),
             source_address=self.xknx.current_address,
         )
-        await self.xknx.telegrams.put(telegram)
+        self.xknx.telegrams.put_nowait(telegram)
 
-    async def telegram_received(self, telegram: Telegram) -> None:
+    def telegram_received(self, telegram: Telegram) -> None:
         """Test if telegram has correct group address and trigger event."""
         if telegram.destination_address == self.group_address and isinstance(
-            telegram.payload, (GroupValueResponse, GroupValueWrite)
+            telegram.payload, GroupValueResponse | GroupValueWrite
         ):
             self.received_telegram = telegram
             self.response_received_event.set()

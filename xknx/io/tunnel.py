@@ -3,6 +3,7 @@ Abstraction for handling KNX/IP tunnels.
 
 Tunnels connect to KNX/IP devices directly via UDP or TCP and build a static connection.
 """
+
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -28,7 +29,7 @@ from xknx.telegram import IndividualAddress
 
 from .const import HEARTBEAT_RATE
 from .gateway_scanner import GatewayDescriptor
-from .interface import CEMICallbackType, Interface
+from .interface import CEMIBytesCallbackType, Interface
 from .ip_secure import SecureSession
 from .request_response import Connect, ConnectionState, Disconnect, Tunnelling
 from .self_description import DescriptionQuery
@@ -49,7 +50,7 @@ class _Tunnel(Interface):
     def __init__(
         self,
         xknx: XKNX,
-        cemi_received_callback: CEMICallbackType,
+        cemi_received_callback: CEMIBytesCallbackType,
         auto_reconnect: bool = True,
         auto_reconnect_wait: int = 3,
     ):
@@ -99,7 +100,7 @@ class _Tunnel(Interface):
 
     async def connect(self) -> bool:
         """Connect to a KNX tunneling interface. Returns True on success."""
-        await self.xknx.connection_manager.connection_state_changed(
+        self.xknx.connection_manager.connection_state_changed(
             XknxConnectionState.CONNECTING, self.connection_type
         )
         try:
@@ -112,7 +113,7 @@ class _Tunnel(Interface):
                 type(ex).__name__,
                 ex,
             )
-            await self.xknx.connection_manager.connection_state_changed(
+            self.xknx.connection_manager.connection_state_changed(
                 XknxConnectionState.DISCONNECTED
             )
             if not self._initial_connection and self.auto_reconnect:
@@ -125,7 +126,7 @@ class _Tunnel(Interface):
             ) from ex
 
         self._tunnel_established()
-        await self.xknx.connection_manager.connection_state_changed(
+        self.xknx.connection_manager.connection_state_changed(
             XknxConnectionState.CONNECTED, self.connection_type
         )
         return True
@@ -139,10 +140,8 @@ class _Tunnel(Interface):
     def _tunnel_lost(self) -> None:
         """Prepare for reconnection or shutdown when the connection is lost. Callback."""
         self.stop_heartbeat()
-        self.xknx.task_registry.background(
-            self.xknx.connection_manager.connection_state_changed(
-                XknxConnectionState.DISCONNECTED
-            )
+        self.xknx.connection_manager.connection_state_changed(
+            XknxConnectionState.DISCONNECTED
         )
         self._data_endpoint_addr = None
         if self.auto_reconnect:
@@ -168,7 +167,7 @@ class _Tunnel(Interface):
     async def disconnect(self) -> None:
         """Disconnect tunneling connection."""
         self.stop_heartbeat()
-        await self.xknx.connection_manager.connection_state_changed(
+        self.xknx.connection_manager.connection_state_changed(
             XknxConnectionState.DISCONNECTED
         )
         self._data_endpoint_addr = None
@@ -380,7 +379,7 @@ class UDPTunnel(_Tunnel):
     def __init__(
         self,
         xknx: XKNX,
-        cemi_received_callback: CEMICallbackType,
+        cemi_received_callback: CEMIBytesCallbackType,
         gateway_ip: str,
         gateway_port: int,
         local_ip: str,
@@ -465,7 +464,7 @@ class UDPTunnel(_Tunnel):
                 except TunnellingAckError as err:
                     raise CommunicationError(
                         f"Resending the telegram repeatedly failed. {err}", True
-                    )
+                    ) from None
 
             finally:
                 self._increase_sequence_number()
@@ -552,7 +551,7 @@ class TCPTunnel(_Tunnel):
     def __init__(
         self,
         xknx: XKNX,
-        cemi_received_callback: CEMICallbackType,
+        cemi_received_callback: CEMIBytesCallbackType,
         gateway_ip: str,
         gateway_port: int,
         individual_address: IndividualAddress | None = None,
@@ -596,7 +595,7 @@ class SecureTunnel(TCPTunnel):
     def __init__(
         self,
         xknx: XKNX,
-        cemi_received_callback: CEMICallbackType,
+        cemi_received_callback: CEMIBytesCallbackType,
         gateway_ip: str,
         gateway_port: int,
         user_id: int,

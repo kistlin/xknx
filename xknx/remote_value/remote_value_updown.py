@@ -3,6 +3,7 @@ Module for managing an DPT Up/Down remote value.
 
 DPT 1.008.
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -11,7 +12,7 @@ from typing import TYPE_CHECKING
 from xknx.dpt import DPTArray, DPTBinary
 from xknx.exceptions import ConversionError, CouldNotParseTelegram
 
-from .remote_value import AsyncCallbackType, GroupAddressesType, RemoteValue
+from .remote_value import GroupAddressesType, RemoteValue, RVCallbackType
 
 if TYPE_CHECKING:
     from xknx.xknx import XKNX
@@ -29,11 +30,11 @@ class RemoteValueUpDown(RemoteValue["RemoteValueUpDown.Direction"]):
     def __init__(
         self,
         xknx: XKNX,
-        group_address: GroupAddressesType | None = None,
-        group_address_state: GroupAddressesType | None = None,
+        group_address: GroupAddressesType = None,
+        group_address_state: GroupAddressesType = None,
         device_name: str | None = None,
         feature_name: str = "Up/Down",
-        after_update_cb: AsyncCallbackType | None = None,
+        after_update_cb: RVCallbackType[Direction] | None = None,
         invert: bool = False,
     ):
         """Initialize remote value of KNX DPT 1.008."""
@@ -73,11 +74,11 @@ class RemoteValueUpDown(RemoteValue["RemoteValueUpDown.Direction"]):
             feature_name=self.feature_name,
         )
 
-    async def down(self) -> None:
+    def down(self) -> None:
         """Set value to down."""
-        await self.set(self.Direction.DOWN)
+        self.set(self.Direction.DOWN)
 
-    async def up(self) -> None:
+    def up(self) -> None:
         """Set value to UP."""
         # pylint: disable=invalid-name
-        await self.set(self.Direction.UP)
+        self.set(self.Direction.UP)

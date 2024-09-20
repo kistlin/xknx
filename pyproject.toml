@@ -1,35 +1,37 @@
 [build-system]
-requires = ["setuptools~=62.3"]
+requires = ["setuptools>=62.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name         = "xknx"
-authors      = [
-    {name = "Julius Mittenzwei", email = "julius@mittenzwei.com"},
-    {name = "Matthias Alphart", email = "farmio@alphart.net"},
-    {name = "Marvin Wichmann", email = "me@marvin-wichmann.de"},
+name = "xknx"
+authors = [
+  { name = "Julius Mittenzwei", email = "julius@mittenzwei.com" },
+  { name = "Matthias Alphart", email = "farmio@alphart.net" },
+  { name = "Marvin Wichmann", email = "me@marvin-wichmann.de" },
 ]
-classifiers  = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Topic :: System :: Hardware :: Hardware Drivers",
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Hardware :: Hardware Drivers",
 ]
 dependencies = [
-    "async_timeout>=4.0.0; python_version<'3.11'",
-    "cryptography>=35.0.0",
-    "ifaddr>=0.1.7",
-    "hidapi>=0.13.1",
+  "async_timeout>=4.0.0; python_version<'3.11'",
+  "typing_extensions; python_version<'3.11'",
+  "cryptography>=35.0.0",
+  "ifaddr>=0.1.7",
+  "hidapi>=0.13.1",
 ]
-description  = "An Asynchronous Library for the KNX protocol. Documentation: https://xknx.io/"
-dynamic      = ["version"]
-keywords     = ["KNX", "EIB", "Home Assistant", "home automation"]
-license      = {text = "MIT License"}
-readme       = "README.md"
-requires-python = ">=3.9.0"
+description = "An Asynchronous Library for the KNX protocol. Documentation: https://xknx.io/"
+dynamic = ["version"]
+keywords = ["KNX", "EIB", "Home Assistant", "home automation"]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.10.0"
 
 [project.urls]
 homepage = "https://xknx.io/"
@@ -37,15 +39,10 @@ repository = "https://github.com/XKNX/xknx.git"
 
 
 [tool.setuptools.dynamic]
-version = {attr = "xknx.__version__.__version__"}
+version = { attr = "xknx.__version__.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["xknx*"]
-
-[tool.black]
-target-version = ["py39", "py310", "py311"]
-exclude = "generated"
-
 
 [tool.codespell]
 skip = '*.min.js,docs/config-converter/lib/*,*.lock'
@@ -53,16 +50,9 @@ ignore-words-list = 'hass'
 quiet-level = 2
 
 
-[tool.isort]
-profile = "black"
-# will group `import x` and `from x import` of the same module.
-force_sort_within_sections = true
-combine_as_imports = true
-
-
 [tool.mypy]
 pretty = true
-python_version = "3.9"
+python_version = "3.10"
 show_error_codes = true
 strict = true
 # additional flags to strict mode
@@ -75,10 +65,11 @@ warn_unreachable = true
 ignore = "test"
 persistent = "no"
 reports = "no"
+allow-reexport-from-package = true
 
 [tool.pylint.message_control]
 # Reasons disabled:
-# format - handled by black
+# format - handled by ruff
 # locally-disabled - it spams too much
 # duplicate-code - unavoidable
 # cyclic-import - doesn't test if both import on load
@@ -115,13 +106,11 @@ disable = [
   "too-many-boolean-expressions",
   "unused-argument",
   "wrong-import-order",
-  ]
+]
 # disabled for tests via command line options in tox.ini:
 #   - protected-access
 #   - abstract-class-instantiated
-enable = [
-  "use-symbolic-message-instead",
-]
+enable = ["use-symbolic-message-instead"]
 
 [tool.pylint.format]
 expected-line-ending-format = "LF"
@@ -137,27 +126,42 @@ asyncio_mode = "auto"
 
 
 [tool.ruff]
-target-version = "py39"
-select = [
-  "C4",  # comprehensions
-  "D",   # pydocstyle
-  "E",   # pycodestyle
-  "F",   # pyflakes
-  "RUF", # ruff specific
-  "T20", # print
-  "UP",  # pyupgrade
-  "W",   # pydocstyle warning
+lint.select = [
+  "A",     # builtins shadowing
+  "ASYNC", # async
+  "B",     # bugbear
+  "C4",    # comprehensions
+  "D",     # pydocstyle
+  "E",     # pycodestyle
+  "F",     # pyflakes
+  "G",     # logging
+  "I",     # isort
+  "LOG",   # logging
+  "PTH",   # pathlib
+  "RUF",   # ruff specific
+  "SLF",   # private member access
+  "SIM",   # simplify
+  "T20",   # print
+  "UP",    # pyupgrade
+  "W",     # pydocstyle warning
 ]
-ignore = [
+lint.ignore = [
   "D202",
   "D203",
   "D212",
-  "E501", # line too long
+  "E501",   # line too long
+  "SIM102", # collapsible-if
+  "SIM105", #suppressible-exception
 ]
-extend-exclude = [
-  "script",
-]
+extend-exclude = ["script"]
 
-[tool.ruff.per-file-ignores]
-"examples/*" = ["T20"]  # print-used
-"test/*" = ["RUF012"]  # Mutable class attributes should be annotated with `typing.ClassVar`
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*" = ["T20"] # print-used
+"test/*" = [
+  "RUF012",
+  "SLF",    # private member access
+] # Mutable class attributes should be annotated with `typing.ClassVar`

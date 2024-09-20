@@ -1,4 +1,5 @@
 """Module for XKXN Exceptions."""
+
 from __future__ import annotations
 
 import logging
@@ -37,6 +38,10 @@ class ConfirmationError(CommunicationError):
 
 class TunnellingAckError(CommunicationError):
     """No ACK or error status received from UDP KNX server for sent Telegram."""
+
+
+class IPSecureError(CommunicationError):
+    """Error in IP Secure communication."""
 
 
 class USBDeviceNotFoundError(XKNXException):
@@ -154,16 +159,16 @@ class ConversionError(XKNXException):
 class CouldNotParseAddress(XKNXException):
     """Exception class for wrong address format."""
 
-    def __init__(
-        self, address: object | str | tuple[Any, ...] | int | None = None
-    ) -> None:
+    def __init__(self, address: Any = None, message: str = "") -> None:
         """Initialize CouldNotParseAddress class."""
         super().__init__()
         self.address = address
+        self.message = message
 
     def __str__(self) -> str:
         """Return object as readable string."""
-        return f'<CouldNotParseAddress address="{self.address}" />'
+        _msg = f'message="{self.message}" ' if self.message else ""
+        return f'<CouldNotParseAddress address="{self.address}" {_msg}/>'
 
 
 class DeviceIllegalValue(XKNXException):
@@ -189,11 +194,7 @@ class DataSecureError(XKNXException):
         self.log_level = log_level
 
 
-class SecureException(XKNXException):
-    """Exception class for IP secure handling."""
-
-
-class InvalidSecureConfiguration(SecureException):
+class InvalidSecureConfiguration(XKNXException):
     """Exception class used when the secure configuration is invalid."""
 
 

@@ -1,11 +1,13 @@
 """IPSecure is an abstraction for handling a KNXnet/IP Secure layer."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import asyncio
+from collections.abc import Callable
 import logging
 import random
-from typing import Callable, Final
+from typing import Final
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
@@ -15,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import (
 from xknx.exceptions import (
     CommunicationError,
     CouldNotParseKNXIP,
+    IPSecureError,
     KNXSecureValidationError,
 )
 from xknx.knxip import (
@@ -111,7 +114,16 @@ class _IPSecureTransportLayer(ABC):
 
     def encrypt_frame(self, plain_frame: KNXIPFrame) -> KNXIPFrame:
         """Wrap KNX/IP frame in SecureWrapper."""
-        sequence_information = self.get_sequence_information()
+        try:
+            sequence_information = self.get_sequence_information()
+        except OverflowError as err:
+            raise IPSecureError(
+                "KNX IP Secure sequence counter overflow."
+                "\nCongratulations! You've managed to overflow a counter designed to last about 9000 years! "
+                "Before celebrating, please check for any malfunctioning devices or suspicious activity "
+                "in your installation. Once you've ensured everything's safe, reset the secure session "
+                "to restore normal operation."
+            ) from err
         message_tag = self.get_message_tag()
         plain_payload = plain_frame.to_knx()  # P
         payload_length = len(plain_payload)  # Q
@@ -220,7 +232,7 @@ class SecureSession(TCPTransport, _IPSecureTransportLayer):
             request_authentication.response.status
             != SecureSessionStatusCode.STATUS_AUTHENTICATION_SUCCESS
         ):
-            raise CommunicationError(
+            raise IPSecureError(
                 f"Secure session authentication failed: {request_authentication.response.status}"
             )
         self._session_status_handler = self.register_callback(
@@ -257,7 +269,7 @@ class SecureSession(TCPTransport, _IPSecureTransportLayer):
                 mac=session_response.message_authentication_code,
             )
             if mac_tr != response_mac_cbc:
-                raise CommunicationError("SessionResponse MAC verification failed.")
+                raise IPSecureError("SessionResponse MAC verification failed.")
         # calculate session key
         ecdh_shared_secret = self._private_key.exchange(self._peer_public_key)
         self._key = sha256_hash(ecdh_shared_secret)[:16]
@@ -501,9 +513,10 @@ class SecureSequenceTimer:
         """Initialize SecureSequenceTimer class."""
         self._backbone_key = backbone_key
         self._clock_difference: int = 0
-        self._expected_notify_handler: tuple[
-            bytes, asyncio.Future[int]  # message_tag, synchronization future
-        ] | None = None
+        self._expected_notify_handler: (
+            tuple[bytes, asyncio.Future[int]]  # message_tag, synchronization future
+            | None
+        ) = None
         self._loop = asyncio.get_running_loop()
         self._notify_timer_handle: asyncio.TimerHandle | None = None
         self._transport_send = transport_send

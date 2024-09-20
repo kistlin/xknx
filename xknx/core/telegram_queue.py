@@ -8,21 +8,21 @@ You may register callbacks to be notified if a telegram was pushed to the queue.
 
 Telegrams addressed to IndividualAddresses are not processed by this queue.
 """
+
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable
 import logging
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from xknx.exceptions import CommunicationError, XKNXException
 from xknx.telegram import AddressFilter, Telegram, TelegramDirection
 from xknx.telegram.address import GroupAddress, InternalGroupAddress
+from xknx.typing import TelegramCallbackType
 
 if TYPE_CHECKING:
     from xknx.xknx import XKNX
-
-    AsyncTelegramCallback = Callable[[Telegram], Awaitable[None]]
 
 logger = logging.getLogger("xknx.log")
 telegram_logger = logging.getLogger("xknx.telegram")
@@ -36,7 +36,7 @@ class TelegramQueue:
 
         def __init__(
             self,
-            callback: AsyncTelegramCallback,
+            callback: TelegramCallbackType,
             address_filters: list[AddressFilter] | None = None,
             group_addresses: list[GroupAddress | InternalGroupAddress] | None = None,
             match_for_outgoing_telegrams: bool = False,
@@ -58,7 +58,7 @@ class TelegramQueue:
             if self._match_all:
                 return True
             if isinstance(
-                telegram.destination_address, (GroupAddress, InternalGroupAddress)
+                telegram.destination_address, GroupAddress | InternalGroupAddress
             ):
                 for address_filter in self.address_filters:
                     if address_filter.match(telegram.destination_address):
@@ -78,7 +78,7 @@ class TelegramQueue:
 
     def register_telegram_received_cb(
         self,
-        telegram_received_cb: AsyncTelegramCallback,
+        telegram_received_cb: TelegramCallbackType,
         address_filters: list[AddressFilter] | None = None,
         group_addresses: list[GroupAddress | InternalGroupAddress] | None = None,
         match_for_outgoing: bool = False,
@@ -109,7 +109,7 @@ class TelegramQueue:
         """Stop telegram queue."""
         logger.debug("Stopping TelegramQueue")
         # If a None object is pushed to the queue, the queue stops
-        await self.xknx.telegrams.put(None)
+        self.xknx.telegrams.put_nowait(None)
         if self._consumer_task is not None:
             await self._consumer_task
 
@@ -123,6 +123,8 @@ class TelegramQueue:
                 await self.outgoing_queue.join()
                 self.xknx.telegrams.task_done()
                 break
+
+            self.xknx.group_address_dpt.set_decoded_data(telegram)
 
             if telegram.direction == TelegramDirection.INCOMING:
                 try:
@@ -204,26 +206,24 @@ class TelegramQueue:
             # raises CommunicationError when interface is not connected
             await self.xknx.cemi_handler.send_telegram(telegram)
 
-        await self.xknx.devices.process(telegram)
-        await self._run_telegram_received_cbs(telegram)
+        self.xknx.devices.process(telegram)
+        self._run_telegram_received_cbs(telegram)
 
     async def process_telegram_incoming(self, telegram: Telegram) -> None:
         """Process incoming telegram."""
         telegram_logger.debug(telegram)
-        await self._run_telegram_received_cbs(telegram)
-        await self.xknx.devices.process(telegram)
+        self._run_telegram_received_cbs(telegram)
+        self.xknx.devices.process(telegram)
 
-    async def _run_telegram_received_cbs(self, telegram: Telegram) -> None:
+    def _run_telegram_received_cbs(self, telegram: Telegram) -> None:
         """Run registered callbacks. Don't propagate exceptions."""
-        callbacks = [
-            cb.callback(telegram)
-            for cb in self.telegram_received_cbs
-            if cb.is_within_filter(telegram)
-        ]
-        try:
-            await asyncio.gather(*callbacks)
-        except Exception:  # pylint: disable=broad-except
-            logger.exception(
-                "Unexpected error while processing telegram_received_cb for %s",
-                telegram,
-            )
+        for callback in self.telegram_received_cbs:
+            if not callback.is_within_filter(telegram):
+                continue
+            try:
+                callback.callback(telegram)
+            except Exception:  # pylint: disable=broad-except
+                logger.exception(
+                    "Unexpected error while processing telegram_received_cb for %s",
+                    telegram,
+                )

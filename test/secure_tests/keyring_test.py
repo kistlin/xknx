@@ -1,5 +1,5 @@
 """Unit test for keyring reader."""
-import os
+
 from pathlib import Path
 
 import pytest
@@ -20,9 +20,7 @@ class TestKeyRing:
     """Test class for keyring."""
 
     keyring_test_file = Path(__file__).parent / "resources/keyring.knxkeys"
-    testcase_file: str = os.path.join(
-        os.path.dirname(__file__), "resources/testcase.knxkeys"
-    )
+    testcase_file: str = Path(__file__).parent / "resources/testcase.knxkeys"
     special_chars_file = (
         Path(__file__).parent / "resources/special_chars_secure_tunnel.knxkeys"
     )
@@ -213,3 +211,11 @@ class TestKeyRing:
             IndividualAddress("1.0.1"): 0,
             IndividualAddress("1.0.2"): 0,
         }
+
+    def test_keyring_metadata(self):
+        """Test keyring metadata parsing."""
+        keyring = sync_load_keyring(self.data_secure_ip, "test")
+        assert keyring.project_name == "DataSecure_only"
+        assert keyring.created_by == "ETS 5.7.7 (Build 1428)"
+        assert keyring.created == "2023-02-06T21:17:09"
+        assert keyring.xmlns == "http://knx.org/xml/keyring/1"

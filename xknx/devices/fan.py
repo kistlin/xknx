@@ -6,6 +6,7 @@ It provides functionality for
 * setting fan to specific speed / step
 * reading the current speed from KNX bus.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -46,12 +47,12 @@ class Fan(Device):
         self,
         xknx: XKNX,
         name: str,
-        group_address_speed: GroupAddressesType | None = None,
-        group_address_speed_state: GroupAddressesType | None = None,
-        group_address_oscillation: GroupAddressesType | None = None,
-        group_address_oscillation_state: GroupAddressesType | None = None,
-        group_address_switch: GroupAddressesType | None = None,
-        group_address_switch_state: GroupAddressesType | None = None,
+        group_address_speed: GroupAddressesType = None,
+        group_address_speed_state: GroupAddressesType = None,
+        group_address_oscillation: GroupAddressesType = None,
+        group_address_oscillation_state: GroupAddressesType = None,
+        group_address_switch: GroupAddressesType = None,
+        group_address_switch_state: GroupAddressesType = None,
         sync_state: bool | int | float | str = True,
         device_updated_cb: DeviceCallbackType[Fan] | None = None,
         max_step: int | None = None,
@@ -128,7 +129,7 @@ class Fan(Device):
     async def turn_on(self, speed: int | None = None) -> None:
         """Turn on fan."""
         if self.switch.initialized:
-            await self.switch.on()
+            self.switch.on()
             # For a switch GA fan, we only use an explicitly provided speed, but not
             # arbitrarily set a default speed here, compared to the speed GA based fans below.
             if speed is not None:
@@ -139,23 +140,23 @@ class Fan(Device):
     async def turn_off(self) -> None:
         """Turn off fan."""
         if self.switch.initialized:
-            await self.switch.off()
+            self.switch.off()
         else:
             await self.set_speed(0)
 
     async def set_speed(self, speed: int) -> None:
         """Set the fan to a designated speed."""
-        await self.speed.set(speed)
+        self.speed.set(speed)
 
     async def set_oscillation(self, oscillation: bool) -> None:
         """Set the fan oscillation mode on or off."""
-        await self.oscillation.set(oscillation)
+        self.oscillation.set(oscillation)
 
-    async def process_group_write(self, telegram: Telegram) -> None:
+    def process_group_write(self, telegram: Telegram) -> None:
         """Process incoming and outgoing GROUP WRITE telegram."""
-        await self.switch.process(telegram)
-        await self.speed.process(telegram)
-        await self.oscillation.process(telegram)
+        self.switch.process(telegram)
+        self.speed.process(telegram)
+        self.oscillation.process(telegram)
 
     @property
     def current_speed(self) -> int | None:

@@ -4,12 +4,14 @@ Abstract base for a specific IP transports (TCP or UDP).
 * It starts and stops a socket
 * It handles callbacks for incoming frame service types
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import asyncio
+from collections.abc import Callable
 import logging
-from typing import Callable, cast
+from typing import cast
 
 from xknx.exceptions import CommunicationError
 from xknx.knxip import HPAI, KNXIPFrame, KNXIPServiceType

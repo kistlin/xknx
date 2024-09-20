@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from xknx.core.thread import BaseThread
-from xknx.io.interface import CEMICallbackType
+from xknx.io.interface import CEMIBytesCallbackType
 from xknx.usb.knx_hid_helper import KNXtoCEMI
 from xknx.usb.util import USBDevice
 
@@ -23,7 +23,7 @@ class USBReceiveThread(BaseThread):
         loop: asyncio.AbstractEventLoop,
         xknx: XKNX,
         usb_device: USBDevice,
-        cemi_received_callback: CEMICallbackType,
+        cemi_received_callback: CEMIBytesCallbackType,
     ):
         """ """
         super().__init__(name="USBReceiveThread")

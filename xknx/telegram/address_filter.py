@@ -27,6 +27,7 @@ Patterns can be
         AddressFilter("i-t?st")
         AddressFilter("i-t*t")
 """
+
 from __future__ import annotations
 
 from fnmatch import fnmatch
@@ -47,7 +48,7 @@ class AddressFilter:
 
     def _parse_pattern(self, pattern: str) -> None:
         if pattern.startswith("i"):
-            self.internal_group_address_pattern = InternalGroupAddress(pattern).address
+            self.internal_group_address_pattern = InternalGroupAddress(pattern).raw
             return
 
         for part in pattern.split("/"):
@@ -55,9 +56,9 @@ class AddressFilter:
         if len(self.level_filters) > 3:
             raise ConversionError("Too many parts within pattern.", pattern=pattern)
 
-    def match(self, address: str | GroupAddress | InternalGroupAddress) -> bool:
+    def match(self, address: str | int | GroupAddress | InternalGroupAddress) -> bool:
         """Test if provided address matches Addressfilter."""
-        if isinstance(address, str):
+        if isinstance(address, str | int):
             address = parse_device_group_address(address)
 
         if isinstance(address, GroupAddress) and self.level_filters:
@@ -71,7 +72,7 @@ class AddressFilter:
             isinstance(address, InternalGroupAddress)
             and self.internal_group_address_pattern
         ):
-            return fnmatch(address.address, self.internal_group_address_pattern)
+            return fnmatch(address.raw, self.internal_group_address_pattern)
 
         return False
 

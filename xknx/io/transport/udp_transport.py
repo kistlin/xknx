@@ -4,13 +4,14 @@ UDPTransport is an abstraction for handling the complete UDP io.
 The module is build upon asyncio udp functions.
 Due to lame support of UDP multicast within asyncio some special treatment for multicast is necessary.
 """
+
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import logging
 import socket
-from sys import platform
-from typing import Callable
+import sys
 
 from xknx.exceptions import CommunicationError, CouldNotParseKNXIP
 from xknx.knxip import HPAI, KNXIPFrame
@@ -114,10 +115,10 @@ class UDPTransport(KNXIPTransport):
         )
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
 
-        if platform == "win32":
+        if sys.platform == "win32":
             # '' represents INADDR_ANY
             sock.bind(("", remote_addr[1]))
-        elif platform == "darwin":
+        elif sys.platform == "darwin":
             # allows multiple sockets to the same port by multiple processes
             # behaves like SO_REUSEADDR for bind for INADDR_ANY
             # (GatewayScanner opens multiple sockets)
@@ -133,7 +134,7 @@ class UDPTransport(KNXIPTransport):
         return sock
 
     async def connect(self) -> None:
-        """Connect UDP socket. Open UDP port and build mulitcast socket if necessary."""
+        """Connect UDP socket. Open UDP port and build multicast socket if necessary."""
         udp_transport_factory = UDPTransport.UDPTransportFactory(
             data_received_callback=self.data_received_callback,
         )

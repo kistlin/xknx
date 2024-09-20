@@ -1,4 +1,5 @@
 """Module for serialization and deserialization of KNX/IP Header."""
+
 from __future__ import annotations
 
 from typing import Final
@@ -34,7 +35,9 @@ class KNXIPHeader:
         try:
             self.service_type_ident = KNXIPServiceType(data[2] * 256 + data[3])
         except ValueError:
-            raise CouldNotParseKNXIP(f"KNXIPServiceType unknown: 0x{data[2:4].hex()}")
+            raise CouldNotParseKNXIP(
+                f"KNXIPServiceType unknown: 0x{data[2:4].hex()}"
+            ) from None
         return KNXIPHeader.HEADERLENGTH
 
     def set_length(self, body: KNXIPBody) -> None:

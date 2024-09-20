@@ -6,14 +6,15 @@ Remote value can be :
 - a group address for reading a KNX value,
 - or a group of both representing the same value.
 """
+
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Iterator
+from abc import ABC
+from collections.abc import Callable, Iterator
 import logging
-from typing import TYPE_CHECKING, Callable, Generic, TypeVar, Union
+from typing import TYPE_CHECKING, Generic, TypeVar, Union
 
-from xknx.dpt import DPTArray, DPTBinary
+from xknx.dpt import DPTArray, DPTBase, DPTBinary
 from xknx.exceptions import ConversionError, CouldNotParseTelegram
 from xknx.telegram import GroupAddress, Telegram
 from xknx.telegram.address import (
@@ -29,39 +30,51 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("xknx.log")
 
-AsyncCallbackType = Callable[[], Awaitable[None]]
-GroupAddressesType = Union["DeviceAddressableType", list["DeviceAddressableType"]]
+GroupAddressesType = Union[
+    "DeviceAddressableType", list[Union["DeviceAddressableType", None]], None
+]
 ValueT = TypeVar("ValueT")
+
+RVCallbackType = Callable[[ValueT], None]
 
 
 class RemoteValue(ABC, Generic[ValueT]):
     """Class for managing remote knx value."""
 
+    dpt_class: type[DPTBase] | None = None
+
     def __init__(
         self,
         xknx: XKNX,
-        group_address: GroupAddressesType | None = None,
-        group_address_state: GroupAddressesType | None = None,
+        group_address: GroupAddressesType = None,
+        group_address_state: GroupAddressesType = None,
         sync_state: None | bool | int | float | str = None,
         device_name: str | None = None,
         feature_name: str | None = None,
-        after_update_cb: AsyncCallbackType | None = None,
+        after_update_cb: RVCallbackType[ValueT] | None = None,
     ):
         """Initialize RemoteValue class."""
         self.xknx: XKNX = xknx
         self.passive_group_addresses: list[DeviceGroupAddress] = []
 
         def unpack_group_addresses(
-            addresses: GroupAddressesType | None,
+            addresses: GroupAddressesType,
         ) -> DeviceGroupAddress | None:
             """Parse group addresses and assign passive addresses when given."""
-            if not addresses:  # None or empty list
+            if addresses is None:
                 return None
             if not isinstance(addresses, list):
                 return parse_device_group_address(addresses)
-            active, *passive = map(parse_device_group_address, addresses)
+            if not addresses:  # empty list
+                return None
+            active = addresses[0]
+            passive = [
+                parse_device_group_address(addr)
+                for addr in addresses[1:]
+                if addr is not None
+            ]
             self.passive_group_addresses.extend(passive)
-            return active
+            return parse_device_group_address(active) if active is not None else None
 
         self.group_address = unpack_group_addresses(group_address)
         self.group_address_state = unpack_group_addresses(group_address_state)
@@ -70,22 +83,27 @@ class RemoteValue(ABC, Generic[ValueT]):
         self.feature_name: str = "Unknown" if feature_name is None else feature_name
         self._value: ValueT | None = None
         self.telegram: Telegram | None = None
-        self.after_update_cb: AsyncCallbackType | None = after_update_cb
+        self.after_update_cb: RVCallbackType[ValueT] | None = after_update_cb
+        self._sync_state = sync_state
 
-        if sync_state is None:
-            sync_state = xknx.state_updater.default_use_updater
+    def register_state_updater(self) -> None:
+        """Register RemoteValue for state updates."""
+        sync_state = (
+            self._sync_state
+            if self._sync_state is not None
+            else self.xknx.state_updater.default_use_updater
+        )
         if sync_state and self.group_address_state:
             self.xknx.state_updater.register_remote_value(
                 self, tracker_options=sync_state
             )
 
-    def __del__(self) -> None:
-        """Destructor. Removing self from StateUpdater if was registered."""
+    def unregister_state_updater(self) -> None:
+        """Unregister RemoteValue from state updates."""
         try:
             self.xknx.state_updater.unregister_remote_value(self)
-        except (KeyError, AttributeError):
+        except KeyError:
             # KeyError if it was never added to StateUpdater
-            # AttributeError if instantiation failed (tests mostly)
             pass
 
     @property
@@ -101,11 +119,11 @@ class RemoteValue(ABC, Generic[ValueT]):
             self.to_knx(value)
         self._value = value
 
-    async def update_value(self, value: ValueT | None) -> None:
-        """Set new value without creating a Telegram. Awaits after_update_cb. Raises ConversionError on invalid value."""
+    def update_value(self, value: ValueT) -> None:
+        """Set new value without creating a Telegram. Calls after_update_cb. Raises ConversionError on invalid value."""
         self.value = value
         if self.after_update_cb is not None:
-            await self.after_update_cb()
+            self.after_update_cb(value)
 
     @property
     def initialized(self) -> bool:
@@ -137,27 +155,29 @@ class RemoteValue(ABC, Generic[ValueT]):
 
         return group_address in remote_value_addresses()
 
-    @abstractmethod
     def from_knx(self, payload: DPTArray | DPTBinary) -> ValueT:
-        """Convert current payload to value - to be implemented in derived class."""
+        """Convert current payload to value - to be implemented in derived class when `dpt_class` can't be used."""
+        if self.dpt_class is None:
+            raise NotImplementedError(
+                "Either `dpt_class` must be set or `from_knx` must be implemented"
+            )
+        return self.dpt_class.from_knx(payload)  # type: ignore[no-any-return]
 
-    @abstractmethod
     def to_knx(self, value: ValueT) -> DPTArray | DPTBinary:
-        """Convert value to payload - to be implemented in derived class."""
+        """Convert value to payload - to be implemented in derived class when `dpt_class` can't be used."""
+        if self.dpt_class is None:
+            raise NotImplementedError(
+                "Either `dpt_class` must be set or `to_knx` must be implemented"
+            )
+        return self.dpt_class.to_knx(value)
 
-    async def process(self, telegram: Telegram, always_callback: bool = False) -> bool:
+    def process(self, telegram: Telegram, always_callback: bool = False) -> bool:
         """Process incoming or outgoing telegram."""
         if not isinstance(
-            telegram.destination_address, (GroupAddress, InternalGroupAddress)
+            telegram.destination_address, GroupAddress | InternalGroupAddress
         ) or not self.has_group_address(telegram.destination_address):
             return False
-        if not isinstance(
-            telegram.payload,
-            (
-                GroupValueWrite,
-                GroupValueResponse,
-            ),
-        ):
+        if not isinstance(telegram.payload, GroupValueWrite | GroupValueResponse):
             raise CouldNotParseTelegram(
                 "payload not a GroupValueWrite or GroupValueResponse",
                 payload=str(telegram.payload),
@@ -168,7 +188,14 @@ class RemoteValue(ABC, Generic[ValueT]):
             )
 
         try:
-            decoded_payload = self.from_knx(telegram.payload.value)
+            decoded_payload: ValueT
+            if (
+                telegram.decoded_data is not None
+                and telegram.decoded_data.transcoder is self.dpt_class
+            ):
+                decoded_payload = telegram.decoded_data.value  # type: ignore[assignment]
+            else:
+                decoded_payload = self.from_knx(telegram.payload.value)
         except (ConversionError, CouldNotParseTelegram) as err:
             logger.warning(
                 "Can not process %s for %s - %s: %s",
@@ -183,26 +210,23 @@ class RemoteValue(ABC, Generic[ValueT]):
             self._value = decoded_payload
             self.telegram = telegram
             if self.after_update_cb is not None:
-                await self.after_update_cb()
+                self.after_update_cb(decoded_payload)
         return True
 
-    async def _send(
-        self, payload: DPTArray | DPTBinary, response: bool = False
-    ) -> None:
+    def _send(self, payload: DPTArray | DPTBinary, response: bool = False) -> None:
         """Send payload as telegram to KNX bus."""
-        if self.group_address is not None:
-            telegram = Telegram(
-                destination_address=self.group_address,
-                payload=(
-                    GroupValueResponse(payload)
-                    if response
-                    else GroupValueWrite(payload)
-                ),
-                source_address=self.xknx.current_address,
-            )
-            await self.xknx.telegrams.put(telegram)
+        if self.group_address is None:
+            return
+        telegram = Telegram(
+            destination_address=self.group_address,
+            payload=(
+                GroupValueResponse(payload) if response else GroupValueWrite(payload)
+            ),
+            source_address=self.xknx.current_address,
+        )
+        self.xknx.telegrams.put_nowait(telegram)
 
-    async def set(self, value: ValueT, response: bool = False) -> None:
+    def set(self, value: ValueT, response: bool = False) -> None:
         """Set new value."""
         if not self.initialized:
             logger.info(
@@ -220,16 +244,16 @@ class RemoteValue(ABC, Generic[ValueT]):
                 value,
             )
             return
-
         payload = self.to_knx(value)
-        await self._send(payload, response)
+        self._send(payload, response)
         # self._value is set and after_update_cb() called when the outgoing telegram is processed.
 
-    async def respond(self) -> None:
+    def respond(self) -> None:
         """Send current payload as GroupValueResponse telegram to KNX bus."""
-        if self._value is not None:
-            payload = self.to_knx(self._value)
-            await self._send(payload, response=True)
+        if self._value is None:
+            return
+        payload = self.to_knx(self._value)
+        self._send(payload, response=True)
 
     async def read_state(self, wait_for_result: bool = False) -> None:
         """Send GroupValueRead telegram for state address to KNX bus."""
@@ -241,10 +265,7 @@ class RemoteValue(ABC, Generic[ValueT]):
 
             value_reader = ValueReader(self.xknx, self.group_address_state)
             if wait_for_result:
-                telegram = await value_reader.read()
-                if telegram is not None:
-                    await self.process(telegram)
-                else:
+                if await value_reader.read() is None:
                     logger.warning(
                         "Could not sync group address '%s' (%s - %s)",
                         self.group_address_state,
@@ -252,7 +273,7 @@ class RemoteValue(ABC, Generic[ValueT]):
                         self.feature_name,
                     )
             else:
-                await value_reader.send_group_read()
+                value_reader.send_group_read()
 
     @property
     def unit_of_measurement(self) -> str | None:
@@ -286,7 +307,7 @@ class RemoteValue(ABC, Generic[ValueT]):
                 return False
             if other.__dict__[key] != value:
                 return False
-        for key, value in other.__dict__.items():
+        for key in other.__dict__:
             if key == "after_update_cb":
                 continue
             if key not in self.__dict__:

@@ -4,15 +4,18 @@ Module for managing the climate within a room.
 * It reads/listens to a temperature address from KNX bus.
 * Manages and sends the desired setpoint to KNX bus.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
 import logging
 from typing import TYPE_CHECKING, Any
 
+from xknx.devices.fan import FanSpeedMode
 from xknx.remote_value import (
     GroupAddressesType,
     RemoteValue,
+    RemoteValueDptValue1Ucount,
     RemoteValueScaling,
     RemoteValueSetpointShift,
     RemoteValueSwitch,
@@ -43,25 +46,28 @@ class Climate(Device):
         self,
         xknx: XKNX,
         name: str,
-        group_address_temperature: GroupAddressesType | None = None,
-        group_address_target_temperature: GroupAddressesType | None = None,
-        group_address_target_temperature_state: GroupAddressesType | None = None,
-        group_address_setpoint_shift: GroupAddressesType | None = None,
-        group_address_setpoint_shift_state: GroupAddressesType | None = None,
+        group_address_temperature: GroupAddressesType = None,
+        group_address_target_temperature: GroupAddressesType = None,
+        group_address_target_temperature_state: GroupAddressesType = None,
+        group_address_setpoint_shift: GroupAddressesType = None,
+        group_address_setpoint_shift_state: GroupAddressesType = None,
         setpoint_shift_mode: SetpointShiftMode | None = None,
         setpoint_shift_max: float = DEFAULT_SETPOINT_SHIFT_MAX,
         setpoint_shift_min: float = DEFAULT_SETPOINT_SHIFT_MIN,
         temperature_step: float = DEFAULT_TEMPERATURE_STEP,
-        group_address_on_off: GroupAddressesType | None = None,
-        group_address_on_off_state: GroupAddressesType | None = None,
+        group_address_on_off: GroupAddressesType = None,
+        group_address_on_off_state: GroupAddressesType = None,
         on_off_invert: bool = False,
-        group_address_active_state: GroupAddressesType | None = None,
-        group_address_command_value_state: GroupAddressesType | None = None,
+        group_address_active_state: GroupAddressesType = None,
+        group_address_command_value_state: GroupAddressesType = None,
         sync_state: bool | int | float | str = True,
         min_temp: float | None = None,
         max_temp: float | None = None,
         mode: ClimateMode | None = None,
         device_updated_cb: DeviceCallbackType[Climate] | None = None,
+        group_address_fan_speed: GroupAddressesType = None,
+        group_address_fan_speed_state: GroupAddressesType = None,
+        fan_max_step: int | None = None,
     ):
         """Initialize Climate class."""
         super().__init__(xknx, name, device_updated_cb)
@@ -134,6 +140,33 @@ class Climate(Device):
             after_update_cb=self.after_update,
         )
 
+        self.fan_speed: RemoteValueDptValue1Ucount | RemoteValueScaling
+        self.fan_mode = FanSpeedMode.STEP if fan_max_step else FanSpeedMode.PERCENT
+        self.fan_max_step = fan_max_step
+
+        if self.fan_mode == FanSpeedMode.STEP:
+            self.fan_speed = RemoteValueDptValue1Ucount(
+                xknx,
+                group_address_fan_speed,
+                group_address_fan_speed_state,
+                sync_state=sync_state,
+                device_name=self.name,
+                feature_name="Fan Speed",
+                after_update_cb=self.after_update,
+            )
+        else:
+            self.fan_speed = RemoteValueScaling(
+                xknx,
+                group_address_fan_speed,
+                group_address_fan_speed_state,
+                sync_state=sync_state,
+                device_name=self.name,
+                feature_name="Fan Speed",
+                after_update_cb=self.after_update,
+                range_from=0,
+                range_to=100,
+            )
+
         self.mode = mode
 
     def _iter_remote_values(self) -> Iterator[RemoteValue[Any]]:
@@ -144,6 +177,7 @@ class Climate(Device):
         yield self.on
         yield self.active
         yield self.command_value
+        yield self.fan_speed
 
     def has_group_address(self, group_address: DeviceGroupAddress) -> bool:
         """Test if device has given group address."""
@@ -168,29 +202,21 @@ class Climate(Device):
 
     async def turn_on(self) -> None:
         """Set power status to on."""
-        await self.on.on()
+        self.on.on()
 
     async def turn_off(self) -> None:
         """Set power status to off."""
-        await self.on.off()
-
-    def shutdown(self) -> None:
-        """Shutdown this device and the underlying mode."""
-        super().shutdown()
-        if self.mode:
-            self.mode.shutdown()
+        self.on.off()
 
     @property
     def initialized_for_setpoint_shift_calculations(self) -> bool:
         """Test if object is initialized for setpoint shift calculations."""
-        if (
+        return (
             self._setpoint_shift.initialized
             and self._setpoint_shift.value is not None
             and self.target_temperature.initialized
             and self.target_temperature.value is not None
-        ):
-            return True
-        return False
+        )
 
     async def set_target_temperature(self, target_temperature: float) -> None:
         """Send new target temperature or setpoint_shift to KNX bus."""
@@ -202,7 +228,11 @@ class Climate(Device):
             validated_temp = self.validate_value(
                 target_temperature, self.min_temp, self.max_temp
             )
-            await self.target_temperature.set(validated_temp)
+            self.target_temperature.set(validated_temp)
+
+    async def set_fan_speed(self, speed: int) -> None:
+        """Set the fan to a designated speed."""
+        self.fan_speed.set(speed)
 
     @property
     def base_temperature(self) -> float | None:
@@ -244,10 +274,10 @@ class Climate(Device):
             offset, self.setpoint_shift_min, self.setpoint_shift_max
         )
         base_temperature = self.base_temperature
-        await self._setpoint_shift.set(validated_offset)
+        self._setpoint_shift.set(validated_offset)
         # broadcast new target temperature and set internally
         if self.target_temperature.writable and base_temperature is not None:
-            await self.target_temperature.set(base_temperature + validated_offset)
+            self.target_temperature.set(base_temperature + validated_offset)
 
     @property
     def target_temperature_max(self) -> float | None:
@@ -269,12 +299,18 @@ class Climate(Device):
             return self.base_temperature + self.setpoint_shift_min
         return None
 
-    async def process_group_write(self, telegram: Telegram) -> None:
+    @property
+    def current_fan_speed(self) -> int | None:
+        """Return current speed of fan."""
+        return self.fan_speed.value
+
+    def process_group_write(self, telegram: Telegram) -> None:
         """Process incoming and outgoing GROUP WRITE telegram."""
         for remote_value in self._iter_remote_values():
-            await remote_value.process(telegram)
+            remote_value.process(telegram)
+
         if self.mode is not None:
-            await self.mode.process_group_write(telegram)
+            self.mode.process_group_write(telegram)
 
     async def sync(self, wait_for_result: bool = False) -> None:
         """Read states of device from KNX bus."""
@@ -293,5 +329,6 @@ class Climate(Device):
             f'setpoint_shift_max="{self.setpoint_shift_max}" '
             f'setpoint_shift_min="{self.setpoint_shift_min}" '
             f"group_address_on_off={self.on.group_addr_str()} "
+            f"group_address_fan_speed={self.fan_speed.group_addr_str()} "
             "/>"
         )

@@ -1,4 +1,5 @@
 """Implementation of KNX raw payload abstractions."""
+
 from __future__ import annotations
 
 from xknx.exceptions import ConversionError
@@ -6,6 +7,8 @@ from xknx.exceptions import ConversionError
 
 class DPTBinary:
     """The DPTBinary is a base class for all datatypes encoded directly into the last 6 bit of the APCI/data octet."""
+
+    __slots__ = ("value",)
 
     APCI_BITMASK = 0x3F  # APCI uses first 2 bits
 
@@ -22,9 +25,7 @@ class DPTBinary:
 
     def __eq__(self, other: object) -> bool:
         """Equal operator."""
-        if isinstance(other, DPTBinary):
-            return self.value == other.value
-        return False
+        return isinstance(other, DPTBinary) and self.value == other.value
 
     def __repr__(self) -> str:
         """Return object representation."""
@@ -38,12 +39,14 @@ class DPTBinary:
 class DPTArray:
     """The DPTArray is a base class for all datatypes appended to the KNX telegram."""
 
+    __slots__ = ("value",)
+
     def __init__(self, value: int | bytes | tuple[int, ...] | list[int]) -> None:
         """Initialize DPTArray class."""
         self.value: tuple[int, ...]
         if isinstance(value, int):
             self.value = (value,)
-        elif isinstance(value, (list, bytes)):
+        elif isinstance(value, list | bytes):
             self.value = tuple(value)
         elif isinstance(value, tuple):
             self.value = value
@@ -52,9 +55,7 @@ class DPTArray:
 
     def __eq__(self, other: object) -> bool:
         """Equal operator."""
-        if isinstance(other, DPTArray):
-            return self.value == other.value
-        return False
+        return isinstance(other, DPTArray) and self.value == other.value
 
     def __repr__(self) -> str:
         """Return object representation."""

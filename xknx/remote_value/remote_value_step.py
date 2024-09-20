@@ -3,6 +3,7 @@ Module for managing an DPT Step remote value.
 
 DPT 1.007.
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -11,7 +12,7 @@ from typing import TYPE_CHECKING
 from xknx.dpt import DPTArray, DPTBinary
 from xknx.exceptions import ConversionError, CouldNotParseTelegram
 
-from .remote_value import AsyncCallbackType, GroupAddressesType, RemoteValue
+from .remote_value import GroupAddressesType, RemoteValue, RVCallbackType
 
 if TYPE_CHECKING:
     from xknx.xknx import XKNX
@@ -29,11 +30,11 @@ class RemoteValueStep(RemoteValue["RemoteValueStep.Direction"]):
     def __init__(
         self,
         xknx: XKNX,
-        group_address: GroupAddressesType | None = None,
-        group_address_state: GroupAddressesType | None = None,
+        group_address: GroupAddressesType = None,
+        group_address_state: GroupAddressesType = None,
         device_name: str | None = None,
         feature_name: str = "Step",
-        after_update_cb: AsyncCallbackType | None = None,
+        after_update_cb: RVCallbackType[Direction] | None = None,
         invert: bool = False,
     ):
         """Initialize remote value of KNX DPT 1.007."""
@@ -77,10 +78,10 @@ class RemoteValueStep(RemoteValue["RemoteValueStep.Direction"]):
             feature_name=self.feature_name,
         )
 
-    async def increase(self) -> None:
+    def increase(self) -> None:
         """Increase value."""
-        await self.set(self.Direction.INCREASE)
+        self.set(self.Direction.INCREASE)
 
-    async def decrease(self) -> None:
+    def decrease(self) -> None:
         """Decrease the value."""
-        await self.set(self.Direction.DECREASE)
+        self.set(self.Direction.DECREASE)

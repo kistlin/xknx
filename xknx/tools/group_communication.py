@@ -1,4 +1,5 @@
 """Package for convenience functions for KNX group communication."""
+
 from __future__ import annotations
 
 import logging
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xknx.tools")
 
 
-async def group_value_read(
+def group_value_read(
     xknx: XKNX,
     group_address: DeviceAddressableType,
 ) -> None:
@@ -26,10 +27,10 @@ async def group_value_read(
     )
 
     logger.debug("Sending GroupValueRead telegram to %s", group_address)
-    await xknx.telegrams.put(telegram)
+    xknx.telegrams.put_nowait(telegram)
 
 
-async def group_value_response(
+def group_value_response(
     xknx: XKNX,
     group_address: DeviceAddressableType,
     value: Any,
@@ -47,10 +48,10 @@ async def group_value_response(
         value_type or "raw",
         group_address,
     )
-    await xknx.telegrams.put(telegram)
+    xknx.telegrams.put_nowait(telegram)
 
 
-async def group_value_write(
+def group_value_write(
     xknx: XKNX,
     group_address: DeviceAddressableType,
     value: Any,
@@ -68,7 +69,7 @@ async def group_value_write(
         value_type or "raw",
         group_address,
     )
-    await xknx.telegrams.put(telegram)
+    xknx.telegrams.put_nowait(telegram)
 
 
 async def read_group_value(
@@ -81,7 +82,7 @@ async def read_group_value(
     value_reader = ValueReader(xknx, parse_device_group_address(group_address))
     response = await value_reader.read()
     if response is not None:
-        assert isinstance(response.payload, (GroupValueWrite, GroupValueResponse))
+        assert isinstance(response.payload, GroupValueWrite | GroupValueResponse)
         if transcoder is not None:
             return transcoder.from_knx(response.payload.value)
         return response.payload.value.value
@@ -91,7 +92,7 @@ async def read_group_value(
 def _parse_dpt(value_type: int | str | type[DPTBase] | None) -> type[DPTBase] | None:
     if value_type is None:
         return None
-    if isinstance(value_type, (int, str)):
+    if isinstance(value_type, int | str):
         if transcoder := DPTBase.parse_transcoder(value_type):
             return transcoder
     else:
@@ -107,7 +108,7 @@ def _parse_payload(
     value: Any,
     value_type: int | str | type[DPTBase] | None = None,
 ) -> DPTBinary | DPTArray:
-    if isinstance(value, (DPTArray, DPTBinary)):
+    if isinstance(value, DPTArray | DPTBinary):
         return value
     if transcoder := _parse_dpt(value_type):
         return transcoder.to_knx(value)

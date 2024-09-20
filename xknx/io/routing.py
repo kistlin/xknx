@@ -3,6 +3,7 @@ Abstraction for handling KNXnet/IP routing.
 
 Routing uses UDP Multicast to send and receive KNXnet/IP messages.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,7 @@ from xknx.knxip import (
 from xknx.telegram import IndividualAddress
 
 from .const import DEFAULT_INDIVIDUAL_ADDRESS, DEFAULT_MCAST_GRP, DEFAULT_MCAST_PORT
-from .interface import CEMICallbackType, Interface
+from .interface import CEMIBytesCallbackType, Interface
 from .ip_secure import SecureGroup
 from .transport import KNXIPTransport, UDPTransport
 
@@ -139,7 +140,7 @@ class Routing(Interface):
         self,
         xknx: XKNX,
         individual_address: IndividualAddress | None,
-        cemi_received_callback: CEMICallbackType,
+        cemi_received_callback: CEMIBytesCallbackType,
         local_ip: str,
         multicast_group: str = DEFAULT_MCAST_GRP,
         multicast_port: int = DEFAULT_MCAST_PORT,
@@ -180,7 +181,7 @@ class Routing(Interface):
     async def connect(self) -> bool:
         """Start routing."""
         self.xknx.current_address = self.individual_address
-        await self.xknx.connection_manager.connection_state_changed(
+        self.xknx.connection_manager.connection_state_changed(
             XknxConnectionState.CONNECTING, self.connection_type
         )
         try:
@@ -191,13 +192,13 @@ class Routing(Interface):
                 type(ex).__name__,
                 ex,
             )
-            await self.xknx.connection_manager.connection_state_changed(
+            self.xknx.connection_manager.connection_state_changed(
                 XknxConnectionState.DISCONNECTED
             )
             # close udp transport to prevent open file descriptors
             self.transport.stop()
             raise CommunicationError("Routing could not be started") from ex
-        await self.xknx.connection_manager.connection_state_changed(
+        self.xknx.connection_manager.connection_state_changed(
             XknxConnectionState.CONNECTED, self.connection_type
         )
         return True
@@ -205,7 +206,7 @@ class Routing(Interface):
     async def disconnect(self) -> None:
         """Stop routing."""
         self.transport.stop()
-        await self.xknx.connection_manager.connection_state_changed(
+        self.xknx.connection_manager.connection_state_changed(
             XknxConnectionState.DISCONNECTED
         )
         self._flow_control.cancel()
@@ -270,7 +271,7 @@ class SecureRouting(Routing):
         self,
         xknx: XKNX,
         individual_address: IndividualAddress | None,
-        cemi_received_callback: CEMICallbackType,
+        cemi_received_callback: CEMIBytesCallbackType,
         local_ip: str,
         backbone_key: bytes,
         latency_ms: int | None = None,
